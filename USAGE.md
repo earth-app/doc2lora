@@ -29,6 +29,8 @@ pip install doc2lora
 
 ### Using as a Library
 
+#### Working with Local Documents
+
 ```python
 from doc2lora import convert
 
@@ -41,7 +43,27 @@ adapter_path = convert(
 print(f"LoRA adapter created at: {adapter_path}")
 ```
 
+#### Working with R2 Bucket Documents
+
+```python
+from doc2lora import convert_from_r2
+
+# Convert documents from R2 bucket to LoRA adapter
+adapter_path = convert_from_r2(
+    bucket_name="my-documents-bucket",
+    folder_prefix="training-docs",  # optional
+    output_path="my_lora_adapter.json",
+    aws_access_key_id="your-access-key-id",
+    aws_secret_access_key="your-secret-access-key",
+    endpoint_url="https://your-account.r2.cloudflarestorage.com"
+)
+
+print(f"LoRA adapter created at: {adapter_path}")
+```
+
 ### Using the CLI
+
+#### CLI with Local Documents
 
 ```bash
 # Basic usage
@@ -53,7 +75,38 @@ doc2lora convert path/to/documents \
     --model microsoft/DialoGPT-medium \
     --epochs 5 \
     --batch-size 2
+```
 
+#### CLI with R2 Bucket Documents
+
+```bash
+# Using environment variables for credentials
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
+
+# Basic usage with R2 bucket
+doc2lora convert-r2 my-documents-bucket --output adapter.json
+
+# With folder prefix and custom parameters
+doc2lora convert-r2 my-documents-bucket \
+    --folder-prefix training-docs \
+    --output adapter.json \
+    --model microsoft/DialoGPT-medium \
+    --epochs 5 \
+    --batch-size 2
+
+# Passing credentials directly (not recommended for production)
+doc2lora convert-r2 my-documents-bucket \
+    --aws-access-key-id "your-access-key-id" \
+    --aws-secret-access-key "your-secret-access-key" \
+    --endpoint-url "https://your-account.r2.cloudflarestorage.com" \
+    --output adapter.json
+```
+
+#### Other CLI Commands
+
+```bash
 # Scan directory for supported files
 doc2lora scan path/to/documents
 
@@ -140,3 +193,120 @@ python -m pytest tests/
 - Start with smaller batch sizes and increase gradually
 - Monitor memory usage during training
 - Use smaller models for initial testing
+
+## R2 Bucket Setup
+
+### Prerequisites for R2 Bucket Support
+
+To use R2 bucket functionality, you need:
+
+1. **Cloudflare R2 Bucket**: A configured R2 bucket containing your documents
+2. **R2 API Token**: API credentials with R2 read permissions
+3. **boto3 Library**: Install with `pip install boto3`
+
+### Obtaining R2 Credentials
+
+1. **Create an R2 API Token**:
+   - Go to Cloudflare Dashboard → R2 Object Storage → Manage R2 API tokens
+   - Create a new API token with "Read" permissions for your bucket
+   - Note down the Access Key ID and Secret Access Key
+
+2. **Get your R2 Endpoint URL**:
+   - Format: `https://your-account-id.r2.cloudflarestorage.com`
+   - Replace `your-account-id` with your actual Cloudflare account ID
+
+### Authentication Methods
+
+#### Method 1: Environment Variables (Recommended)
+
+```bash
+# Set these environment variables
+export AWS_ACCESS_KEY_ID="your-r2-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-r2-secret-access-key"
+export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
+
+# Then use the CLI without additional parameters
+doc2lora convert-r2 my-bucket --output adapter.json
+```
+
+#### Method 2: Direct Parameters
+
+```python
+from doc2lora import convert_from_r2
+
+convert_from_r2(
+    bucket_name="my-bucket",
+    aws_access_key_id="your-access-key",
+    aws_secret_access_key="your-secret-key",
+    endpoint_url="https://your-account.r2.cloudflarestorage.com"
+)
+```
+
+#### Method 3: CLI Parameters
+
+```bash
+doc2lora convert-r2 my-bucket \
+    --aws-access-key-id "your-access-key" \
+    --aws-secret-access-key "your-secret-key" \
+    --endpoint-url "https://your-account.r2.cloudflarestorage.com"
+```
+
+### R2 Bucket Structure
+
+Your R2 bucket can contain documents in any supported format:
+
+```text
+my-documents-bucket/
+├── training-docs/          # Optional folder prefix
+│   ├── legal/
+│   │   ├── contract1.pdf
+│   │   └── policy.md
+│   ├── medical/
+│   │   ├── research.docx
+│   │   └── guidelines.txt
+│   └── general/
+│       ├── faq.json
+│       └── manual.html
+└── other-files/
+    └── readme.txt
+```
+
+### Usage Examples
+
+#### Convert Entire Bucket
+
+```bash
+doc2lora convert-r2 my-documents-bucket --output full_dataset_adapter.json
+```
+
+#### Convert Specific Folder
+
+```bash
+doc2lora convert-r2 my-documents-bucket \
+    --folder-prefix training-docs/legal \
+    --output legal_adapter.json
+```
+
+#### Programmatic Usage with Error Handling
+
+```python
+from doc2lora import convert_from_r2
+import os
+
+try:
+    adapter_path = convert_from_r2(
+        bucket_name="my-documents-bucket",
+        folder_prefix="training-docs",
+        output_path="my_adapter.json",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        endpoint_url=os.getenv("R2_ENDPOINT_URL"),
+        # Optional: customize training parameters
+        model_name="microsoft/DialoGPT-medium",
+        epochs=5,
+        batch_size=2
+    )
+    print(f"Successfully created adapter: {adapter_path}")
+except Exception as e:
+    print(f"Error: {e}")
+```

@@ -2,8 +2,15 @@
 
 import logging
 import os
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+try:
+    import boto3
+    from botocore.exceptions import NoCredentialsError, ClientError
+except ImportError:
+    boto3 = None
 
 logger = logging.getLogger(__name__)
 
@@ -123,3 +130,130 @@ def create_training_summary(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
             len(documents), total_size / (1024 * 1024)
         ),
     }
+
+
+def download_from_r2_bucket(
+    bucket_name: str,
+    folder_prefix: Optional[str] = None,
+    aws_access_key_id: Optional[str] = None,
+    aws_secret_access_key: Optional[str] = None,
+    endpoint_url: Optional[str] = None,
+    region_name: str = "auto",
+) -> str:
+    """
+    Download files from an R2 bucket to a temporary directory.
+
+    Args:
+        bucket_name: Name of the R2 bucket
+        folder_prefix: Optional folder prefix within the bucket
+        aws_access_key_id: AWS access key ID for R2
+        aws_secret_access_key: AWS secret access key for R2
+        endpoint_url: R2 endpoint URL (e.g., https://your-account.r2.cloudflarestorage.com)
+        region_name: Region name (default: "auto" for R2)
+
+    Returns:
+        Path to temporary directory containing downloaded files
+
+    Raises:
+        ImportError: If boto3 is not installed
+        NoCredentialsError: If credentials are not provided
+        ClientError: If there's an error accessing the bucket
+    """
+    if boto3 is None:
+        raise ImportError(
+            "boto3 is required for R2 bucket support. Install with: pip install boto3"
+        )
+
+    # Create S3 client for R2
+    s3_client = boto3.client(
+        "s3",
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        endpoint_url=endpoint_url,
+        region_name=region_name,
+    )
+
+    # Create temporary directory
+    temp_dir = tempfile.mkdtemp(prefix="doc2lora_r2_")
+    temp_path = Path(temp_dir)
+
+    logger.info(f"Downloading files from R2 bucket '{bucket_name}' to {temp_dir}")
+
+    try:
+        # List objects in bucket
+        paginator = s3_client.get_paginator("list_objects_v2")
+
+        # Configure pagination parameters
+        page_kwargs = {"Bucket": bucket_name}
+        if folder_prefix:
+            page_kwargs["Prefix"] = folder_prefix.rstrip("/") + "/"
+
+        downloaded_count = 0
+
+        for page in paginator.paginate(**page_kwargs):
+            if "Contents" not in page:
+                continue
+
+            for obj in page["Contents"]:
+                key = obj["Key"]
+
+                # Skip directory markers
+                if key.endswith("/"):
+                    continue
+
+                # Create local file path
+                if folder_prefix:
+                    # Remove folder prefix from the key for local path
+                    relative_key = key[len(folder_prefix.rstrip("/") + "/"):]
+                else:
+                    relative_key = key
+
+                local_file_path = temp_path / relative_key
+
+                # Create directories if needed
+                local_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Download file
+                try:
+                    s3_client.download_file(bucket_name, key, str(local_file_path))
+                    downloaded_count += 1
+                    logger.debug(f"Downloaded: {key} -> {local_file_path}")
+                except ClientError as e:
+                    logger.error(f"Error downloading {key}: {e}")
+                    continue
+
+        if downloaded_count == 0:
+            logger.warning("No files were downloaded from the bucket")
+        else:
+            logger.info(f"Downloaded {downloaded_count} files from R2 bucket")
+
+        return str(temp_path)
+
+    except NoCredentialsError:
+        raise NoCredentialsError(
+            "AWS credentials not found. Please provide aws_access_key_id and aws_secret_access_key"
+        )
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "NoSuchBucket":
+            raise ValueError(f"Bucket '{bucket_name}' does not exist")
+        elif error_code == "AccessDenied":
+            raise ValueError("Access denied. Check your credentials and permissions")
+        else:
+            raise ClientError(f"Error accessing R2 bucket: {e}", e.operation_name)
+
+
+def cleanup_temp_directory(temp_dir: str) -> None:
+    """
+    Clean up a temporary directory and all its contents.
+
+    Args:
+        temp_dir: Path to the temporary directory to clean up
+    """
+    import shutil
+
+    try:
+        shutil.rmtree(temp_dir)
+        logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+    except Exception as e:
+        logger.warning(f"Error cleaning up temporary directory {temp_dir}: {e}")
