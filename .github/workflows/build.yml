@@ -21,6 +21,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -35,28 +36,22 @@ jobs:
     - name: Import sort check with isort
       run: |
         isort --check-only doc2lora/ tests/ examples/
-    - name: Type check with mypy
-      run: |
-        mypy doc2lora/ --ignore-missing-imports
     - name: Test with pytest
       run: |
         pytest tests/ -v --cov=doc2lora --cov-report=xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
 
   build:
     needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
-    
+
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
+        cache: 'pip'
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip

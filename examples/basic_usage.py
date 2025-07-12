@@ -1,11 +1,12 @@
 """Example usage of doc2lora library."""
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add the parent directory to Python path so we can import doc2lora
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 def demo_document_parsing():
     """Demonstrate document parsing functionality that works without ML dependencies."""
@@ -17,31 +18,54 @@ def demo_document_parsing():
 
     if not docs_path.exists():
         print(f"❌ Example documents directory not found: {docs_path}")
-        print("   Please ensure the example_documents directory exists with sample files.")
+        print(
+            "   Please ensure the example_documents directory exists with sample files."
+        )
         return
 
     print(f"📁 Scanning directory: {docs_path}")
 
     # Manually parse documents to demonstrate the core functionality
-    supported_extensions = {'.md', '.txt', '.pdf', '.html', '.docx', '.csv', '.json', '.yaml', '.yml', '.xml', '.tex'}
+    supported_extensions = {
+        ".md",
+        ".txt",
+        ".pdf",
+        ".html",
+        ".docx",
+        ".csv",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".xml",
+        ".tex",
+    }
     documents = []
 
     for file_path in docs_path.rglob("*"):
         if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
             try:
                 # Read the file content based on extension
-                if file_path.suffix.lower() in {'.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.tex', '.csv'}:
-                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                if file_path.suffix.lower() in {
+                    ".txt",
+                    ".md",
+                    ".json",
+                    ".yaml",
+                    ".yml",
+                    ".xml",
+                    ".tex",
+                    ".csv",
+                }:
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
                 else:
                     # For binary files like PDF, DOCX, just indicate they would be processed
                     content = f"[Binary file: {file_path.name} - would be processed by appropriate parser]"
 
                 doc_info = {
-                    'content': content,
-                    'filename': file_path.name,
-                    'filepath': str(file_path),
-                    'extension': file_path.suffix.lower(),
-                    'size': file_path.stat().st_size
+                    "content": content,
+                    "filename": file_path.name,
+                    "filepath": str(file_path),
+                    "extension": file_path.suffix.lower(),
+                    "size": file_path.stat().st_size,
                 }
                 documents.append(doc_info)
 
@@ -52,23 +76,23 @@ def demo_document_parsing():
 
     total_size = 0
     for doc in documents:
-        size_kb = doc['size'] / 1024
-        total_size += doc['size']
+        size_kb = doc["size"] / 1024
+        total_size += doc["size"]
 
         # Show file info
         print(f"\n📄 {doc['filename']} ({doc['extension']})")
         print(f"   Size: {size_kb:.1f} KB")
 
         # Show content preview
-        content_preview = doc['content'].strip()[:150].replace('\n', ' ')
+        content_preview = doc["content"].strip()[:150].replace("\n", " ")
         print(f"   Preview: {content_preview}...")
 
         # Show what this would contribute to training
-        word_count = len(doc['content'].split())
+        word_count = len(doc["content"].split())
         print(f"   Words: ~{word_count} words")
 
     total_size_kb = total_size / 1024
-    total_words = sum(len(doc['content'].split()) for doc in documents)
+    total_words = sum(len(doc["content"].split()) for doc in documents)
 
     print(f"\n📊 Summary:")
     print(f"   Total documents: {len(documents)}")
@@ -77,6 +101,7 @@ def demo_document_parsing():
     print(f"   File types: {set(doc['extension'] for doc in documents)}")
 
     return documents
+
 
 def demo_lora_conversion_info():
     """Show what the LoRA conversion would do (without actually doing it)."""
@@ -107,7 +132,10 @@ def demo_lora_conversion_info():
 
     print("\n🔧 To enable full functionality, install:")
     print("   pip install torch transformers peft datasets")
-    print("   pip install PyPDF2 python-docx beautifulsoup4 PyYAML  # for additional formats")
+    print(
+        "   pip install PyPDF2 python-docx beautifulsoup4 PyYAML  # for additional formats"
+    )
+
 
 def main():
     """Main demo function."""
@@ -140,22 +168,28 @@ def main():
                 output_path=str(output_dir / "demo_adapter.json"),
                 num_epochs=1,  # Quick demo
                 batch_size=1,
-                max_length=256  # Shorter sequences for demo
+                max_length=256,  # Shorter sequences for demo
             )
             print(f"🎉 LoRA adapter successfully created at: {adapter_path}")
 
         except ImportError as e:
             print(f"⚠️  ML dependencies not available: {e}")
-            print("   Document parsing works, but LoRA training requires additional packages.")
+            print(
+                "   Document parsing works, but LoRA training requires additional packages."
+            )
             print("   Run: pip install torch transformers peft datasets")
         except Exception as e:
             print(f"❌ Error during conversion: {e}")
-            print("   This might be due to insufficient resources or model download issues.")
+            print(
+                "   This might be due to insufficient resources or model download issues."
+            )
 
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()

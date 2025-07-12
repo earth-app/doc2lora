@@ -1,11 +1,12 @@
 """Example usage of doc2lora with Mistral models."""
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add the parent directory to Python path so we can import doc2lora
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 def create_sample_documents():
     """Create sample documents if they don't exist."""
@@ -28,7 +29,6 @@ async def root():
 ```
 
 This creates a simple endpoint that returns JSON when accessed.""",
-
         "sample_documentation.md": """# API Documentation
 
 ## Getting Started
@@ -53,7 +53,6 @@ Creates a new user.
 #### GET /users/{id}
 Returns a specific user by ID.
 """,
-
         "sample_instructions.txt": """How to set up the development environment:
 
 1. Clone the repository
@@ -76,6 +75,7 @@ For production deployment:
             print(f"Created sample file: {filename}")
 
     return docs_path
+
 
 def demo_mistral_training():
     """Demonstrate training with Mistral model."""
@@ -105,14 +105,15 @@ def demo_mistral_training():
             learning_rate=1e-4,  # Lower learning rate for Mistral
             lora_r=16,
             lora_alpha=32,
-            lora_dropout=0.1
+            lora_dropout=0.1,
         )
 
         print(f"🎉 Mistral LoRA adapter successfully created at: {adapter_path}")
 
         # Show what the adapter contains
         import json
-        with open(adapter_path, 'r') as f:
+
+        with open(adapter_path, "r") as f:
             metadata = json.load(f)
 
         print("\n📋 Adapter Information:")
@@ -136,6 +137,7 @@ def demo_mistral_training():
         print("   - CUDA/PyTorch compatibility issues")
         return None
 
+
 def show_cloudflare_usage(adapter_path):
     """Show how to use the adapter with Cloudflare Workers AI."""
     if not adapter_path:
@@ -145,7 +147,8 @@ def show_cloudflare_usage(adapter_path):
     print("🌐 Using with Cloudflare Workers AI")
     print(f"{'='*60}")
 
-    print("""
+    print(
+        """
 To use your trained LoRA adapter with Cloudflare Workers AI:
 
 1. Upload your adapter to Cloudflare:
@@ -173,7 +176,9 @@ To use your trained LoRA adapter with Cloudflare Workers AI:
    ```
 
 3. The model will now use your fine-tuned knowledge from the documents!
-""")
+"""
+    )
+
 
 def main():
     """Main demo function."""
@@ -187,7 +192,8 @@ def main():
         print(f"\n{'='*60}")
         print("📚 Additional Tips")
         print(f"{'='*60}")
-        print("""
+        print(
+            """
 For better results with Mistral:
 - Use more training data (100+ documents)
 - Increase training epochs (3-5)
@@ -200,12 +206,15 @@ Supported Mistral models:
 - mistralai/Mistral-7B-Instruct-v0.1
 - mistralai/Mistral-7B-Instruct-v0.2
 - mistralai/Mistral-7B-Instruct-v0.3
-""")
+"""
+        )
 
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()
