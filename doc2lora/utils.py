@@ -12,7 +12,39 @@ try:
 except ImportError:
     boto3 = None
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
 logger = logging.getLogger(__name__)
+
+
+def load_env_file(env_file_path: Optional[str] = None) -> None:
+    """
+    Load environment variables from a .env file.
+
+    Args:
+        env_file_path: Path to the .env file. If None, looks for .env in current directory.
+    """
+    if load_dotenv is None:
+        logger.warning("python-dotenv not installed. Cannot load .env file. Install with: pip install python-dotenv")
+        return
+
+    if env_file_path:
+        env_path = Path(env_file_path)
+        if not env_path.exists():
+            raise FileNotFoundError(f".env file not found: {env_file_path}")
+        load_dotenv(env_path)
+        logger.info(f"Loaded environment variables from: {env_file_path}")
+    else:
+        # Look for .env in current directory
+        env_path = Path(".env")
+        if env_path.exists():
+            load_dotenv(env_path)
+            logger.info(f"Loaded environment variables from: {env_path}")
+        else:
+            logger.debug("No .env file found in current directory")
 
 
 def validate_documents_path(path: str) -> Path:
@@ -139,6 +171,7 @@ def download_from_r2_bucket(
     aws_secret_access_key: Optional[str] = None,
     endpoint_url: Optional[str] = None,
     region_name: str = "auto",
+    env_file: Optional[str] = None,
 ) -> str:
     """
     Download files from an R2 bucket to a temporary directory.
@@ -150,6 +183,7 @@ def download_from_r2_bucket(
         aws_secret_access_key: AWS secret access key for R2
         endpoint_url: R2 endpoint URL (e.g., https://your-account.r2.cloudflarestorage.com)
         region_name: Region name (default: "auto" for R2)
+        env_file: Path to .env file to load credentials from
 
     Returns:
         Path to temporary directory containing downloaded files
@@ -159,6 +193,18 @@ def download_from_r2_bucket(
         NoCredentialsError: If credentials are not provided
         ClientError: If there's an error accessing the bucket
     """
+    # Load environment variables from .env file if provided
+    if env_file:
+        load_env_file(env_file)
+
+    # Get credentials from environment variables if not provided directly
+    if not aws_access_key_id:
+        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+    if not aws_secret_access_key:
+        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if not endpoint_url:
+        endpoint_url = os.getenv("R2_ENDPOINT_URL")
+
     if boto3 is None:
         raise ImportError(
             "boto3 is required for R2 bucket support. Install with: pip install boto3"

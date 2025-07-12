@@ -99,6 +99,7 @@ def convert_from_r2(
     endpoint_url: str = None,
     region_name: str = "auto",
     cleanup_temp: bool = True,
+    env_file: str = None,
     **kwargs,
 ) -> str:
     """
@@ -121,6 +122,7 @@ def convert_from_r2(
         endpoint_url: R2 endpoint URL
         region_name: Region name (default: "auto" for R2)
         cleanup_temp: Whether to clean up temporary directory after processing
+        env_file: Path to .env file to load credentials from
         **kwargs: Additional arguments
 
     Returns:
@@ -137,6 +139,7 @@ def convert_from_r2(
             aws_secret_access_key=aws_secret_access_key,
             endpoint_url=endpoint_url,
             region_name=region_name,
+            env_file=env_file,
         )
 
         # Use the existing convert function with the temporary directory

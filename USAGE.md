@@ -80,7 +80,7 @@ doc2lora convert path/to/documents \
 #### CLI with R2 Bucket Documents
 
 ```bash
-# Using environment variables for credentials
+# Method 1: Using environment variables for credentials
 export AWS_ACCESS_KEY_ID="your-access-key-id"
 export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
 export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
@@ -88,15 +88,21 @@ export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
 # Basic usage with R2 bucket
 doc2lora convert-r2 my-documents-bucket --output adapter.json
 
+# Method 2: Using .env file (recommended)
+doc2lora convert-r2 my-documents-bucket \
+    --env-file .env \
+    --output adapter.json
+
 # With folder prefix and custom parameters
 doc2lora convert-r2 my-documents-bucket \
+    --env-file .env \
     --folder-prefix training-docs \
     --output adapter.json \
     --model microsoft/DialoGPT-medium \
     --epochs 5 \
     --batch-size 2
 
-# Passing credentials directly (not recommended for production)
+# Method 3: Passing credentials directly (not recommended for production)
 doc2lora convert-r2 my-documents-bucket \
     --aws-access-key-id "your-access-key-id" \
     --aws-secret-access-key "your-secret-access-key" \
@@ -229,7 +235,48 @@ export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
 doc2lora convert-r2 my-bucket --output adapter.json
 ```
 
-#### Method 2: Direct Parameters
+#### Method 2: .env File (Recommended for Security)
+
+Create a `.env` file in your project directory:
+
+```env
+# .env file
+AWS_ACCESS_KEY_ID=your-r2-access-key-id
+AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key
+R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com
+R2_BUCKET_NAME=my-documents-bucket
+R2_FOLDER_PREFIX=training-docs
+```
+
+Then use the CLI or library:
+
+```bash
+# CLI with .env file
+doc2lora convert-r2 my-bucket --env-file .env --output adapter.json
+
+# Or specify a custom .env file path
+doc2lora convert-r2 my-bucket --env-file /path/to/my-credentials.env
+```
+
+```python
+# Python API with .env file
+from doc2lora import convert_from_r2
+
+convert_from_r2(
+    bucket_name="my-bucket",
+    env_file=".env"  # Loads credentials from .env file
+)
+
+# The function will automatically load credentials from the .env file
+# You can still override specific parameters if needed
+convert_from_r2(
+    bucket_name="my-bucket",
+    env_file=".env",
+    output_path="custom_output.json"  # Override specific settings
+)
+```
+
+#### Method 3: Direct Parameters
 
 ```python
 from doc2lora import convert_from_r2
@@ -242,7 +289,7 @@ convert_from_r2(
 )
 ```
 
-#### Method 3: CLI Parameters
+#### Method 4: CLI Parameters
 
 ```bash
 doc2lora convert-r2 my-bucket \

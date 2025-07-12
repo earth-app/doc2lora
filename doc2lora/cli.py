@@ -1,6 +1,7 @@
 """Command-line interface for doc2lora."""
 
 import logging
+import os
 from pathlib import Path
 
 import click
@@ -177,6 +178,10 @@ def formats():
     default="auto",
     help="Region name (default: auto for R2)",
 )
+@click.option(
+    "--env-file",
+    help="Path to .env file containing R2 credentials",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def convert_r2(
     bucket_name: str,
@@ -194,18 +199,39 @@ def convert_r2(
     aws_secret_access_key: str,
     endpoint_url: str,
     region_name: str,
+    env_file: str,
     verbose: bool,
 ):
     """Convert documents from an R2 bucket to LoRA adapter format."""
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Load .env file if provided
+    if env_file:
+        from .utils import load_env_file
+        try:
+            load_env_file(env_file)
+            click.echo(f"Loaded credentials from: {env_file}")
+        except FileNotFoundError as e:
+            click.echo(f"❌ Error: {e}", err=True)
+            raise click.Abort()
+
+    # If credentials not provided directly, try to get from environment
+    # (which may have been loaded from .env file)
+    if not aws_access_key_id:
+        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+    if not aws_secret_access_key:
+        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if not endpoint_url:
+        endpoint_url = os.getenv("R2_ENDPOINT_URL")
+
     # Validate required credentials
     if not aws_access_key_id or not aws_secret_access_key:
         click.echo(
             "❌ Error: AWS credentials are required. Provide them via:\n"
             "  --aws-access-key-id and --aws-secret-access-key options, or\n"
-            "  AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables",
+            "  AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables, or\n"
+            "  --env-file option pointing to a .env file",
             err=True
         )
         raise click.Abort()
@@ -214,7 +240,8 @@ def convert_r2(
         click.echo(
             "❌ Error: R2 endpoint URL is required. Provide it via:\n"
             "  --endpoint-url option, or\n"
-            "  R2_ENDPOINT_URL environment variable\n"
+            "  R2_ENDPOINT_URL environment variable, or\n"
+            "  --env-file option pointing to a .env file\n"
             "  Example: https://your-account.r2.cloudflarestorage.com",
             err=True
         )
@@ -242,6 +269,7 @@ def convert_r2(
             aws_secret_access_key=aws_secret_access_key,
             endpoint_url=endpoint_url,
             region_name=region_name,
+            env_file=env_file,
         )
 
         click.echo(f"✅ LoRA adapter successfully created at: {adapter_path}")

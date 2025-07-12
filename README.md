@@ -61,7 +61,7 @@ convert("path/to/documents", output_path="path/to/output.json")
 ```py
 from doc2lora import convert_from_r2
 
-# Convert documents from R2 bucket to LoRA format
+# Method 1: Direct credentials
 convert_from_r2(
     bucket_name="my-documents-bucket",
     folder_prefix="training-docs",  # optional
@@ -69,6 +69,14 @@ convert_from_r2(
     aws_access_key_id="your-access-key",
     aws_secret_access_key="your-secret-key",
     endpoint_url="https://your-account.r2.cloudflarestorage.com"
+)
+
+# Method 2: Using .env file (recommended)
+convert_from_r2(
+    bucket_name="my-documents-bucket",
+    folder_prefix="training-docs",  # optional
+    output_path="path/to/output.json",
+    env_file=".env"  # Load credentials from .env file
 )
 
 # The output will be a JSON file containing the LoRA adapter data
@@ -92,7 +100,7 @@ doc2lora convert path/to/documents --output path/to/output.json
 ### CLI for R2 Bucket Documents
 
 ```bash
-# Set environment variables for credentials
+# Method 1: Set environment variables for credentials
 export AWS_ACCESS_KEY_ID="your-access-key"
 export AWS_SECRET_ACCESS_KEY="your-secret-key"
 export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
@@ -100,7 +108,13 @@ export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
 # Convert documents from R2 bucket
 doc2lora convert-r2 my-documents-bucket --folder-prefix training-docs --output path/to/output.json
 
-# Or pass credentials directly
+# Method 2: Use .env file (recommended)
+doc2lora convert-r2 my-documents-bucket \
+    --env-file .env \
+    --folder-prefix training-docs \
+    --output path/to/output.json
+
+# Method 3: Pass credentials directly
 doc2lora convert-r2 my-documents-bucket \
     --aws-access-key-id "your-access-key" \
     --aws-secret-access-key "your-secret-key" \

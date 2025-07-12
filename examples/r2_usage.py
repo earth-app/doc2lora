@@ -30,7 +30,20 @@ def main():
     print("=" * 50)
 
     # R2 configuration
-    # In production, these should be set as environment variables
+    # Option 1: Use environment variables directly
+    # Option 2: Load from .env file (recommended for security)
+
+    # Try to load from .env file first if it exists
+    env_file_path = os.getenv("DOC2LORA_ENV_FILE", ".env")
+    if Path(env_file_path).exists():
+        print(f"📄 Found .env file at: {env_file_path}")
+        try:
+            from doc2lora.utils import load_env_file
+            load_env_file(env_file_path)
+            print("✅ Loaded credentials from .env file")
+        except ImportError:
+            print("⚠️  python-dotenv not installed, falling back to environment variables")
+
     BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "my-documents-bucket")
     FOLDER_PREFIX = os.getenv("R2_FOLDER_PREFIX", "training-docs")  # Optional
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -40,12 +53,22 @@ def main():
     # Check if credentials are provided
     if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, R2_ENDPOINT_URL]):
         print("❌ Missing R2 credentials!")
-        print("\nPlease set the following environment variables:")
+        print("\nYou can provide credentials in several ways:")
+        print("\n1. Environment variables:")
         print("  AWS_ACCESS_KEY_ID=your-r2-access-key-id")
         print("  AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key")
         print("  R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
         print("  R2_BUCKET_NAME=your-bucket-name (optional, defaults to 'my-documents-bucket')")
         print("  R2_FOLDER_PREFIX=folder-prefix (optional)")
+        print("\n2. .env file (recommended):")
+        print("  Create a .env file with the following content:")
+        print("  AWS_ACCESS_KEY_ID=your-r2-access-key-id")
+        print("  AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key")
+        print("  R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
+        print("  R2_BUCKET_NAME=my-documents-bucket")
+        print("  R2_FOLDER_PREFIX=training-docs")
+        print("\n3. Pass env_file parameter to convert_from_r2():")
+        print("  convert_from_r2(bucket_name='my-bucket', env_file='.env')")
         print("\nExample:")
         print("  export AWS_ACCESS_KEY_ID=abc123...")
         print("  export AWS_SECRET_ACCESS_KEY=xyz789...")
@@ -63,7 +86,7 @@ def main():
     try:
         print("🔄 Converting documents from R2 bucket...")
 
-        # Convert documents from R2 bucket
+        # Method 1: Convert documents from R2 bucket using explicit credentials
         adapter_path = convert_from_r2(
             bucket_name=BUCKET_NAME,
             folder_prefix=FOLDER_PREFIX,
@@ -81,6 +104,23 @@ def main():
             endpoint_url=R2_ENDPOINT_URL,
             cleanup_temp=True,  # Clean up downloaded files
         )
+
+        # Method 2: Alternative - using .env file (uncomment to use)
+        # adapter_path = convert_from_r2(
+        #     bucket_name=BUCKET_NAME,
+        #     folder_prefix=FOLDER_PREFIX,
+        #     output_path="r2_lora_adapter.json",
+        #     env_file=".env",  # Load credentials from .env file
+        #     model_name="microsoft/DialoGPT-small",
+        #     max_length=256,
+        #     batch_size=2,
+        #     num_epochs=1,
+        #     learning_rate=5e-4,
+        #     lora_r=8,
+        #     lora_alpha=16,
+        #     lora_dropout=0.1,
+        #     cleanup_temp=True,
+        # )
 
         print(f"✅ Success! LoRA adapter created at: {adapter_path}")
         print("\n📊 Next steps:")
