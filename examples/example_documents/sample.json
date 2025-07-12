@@ -1,0 +1,28 @@
+{
+  "title": "Sample JSON Document",
+  "description": "This is a sample JSON file for testing doc2lora",
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "name": "First Item",
+        "value": "Sample value 1"
+      },
+      {
+        "id": 2,
+        "name": "Second Item", 
+        "value": "Sample value 2"
+      }
+    ],
+    "metadata": {
+      "created": "2024-01-01",
+      "version": "1.0",
+      "author": "doc2lora"
+    }
+  },
+  "notes": [
+    "This JSON document tests the JSON parser",
+    "It contains nested objects and arrays",
+    "The content should be included in LoRA training"
+  ]
+}

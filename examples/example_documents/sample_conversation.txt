@@ -1,0 +1,14 @@
+User: How do I create a REST API?
+Assistant: To create a REST API, you can use frameworks like FastAPI for Python or Express.js for Node.js. Here's a basic FastAPI example:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+```
+
+This creates a simple endpoint that returns JSON when accessed.

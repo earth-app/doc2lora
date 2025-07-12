@@ -1,0 +1,12 @@
+How to set up the development environment:
+
+1. Clone the repository
+2. Install dependencies with pip install -r requirements.txt
+3. Set up environment variables in .env file
+4. Run the application with python app.py
+
+For production deployment:
+- Use a WSGI server like Gunicorn
+- Set up a reverse proxy with Nginx
+- Configure SSL certificates
+- Set up monitoring and logging
