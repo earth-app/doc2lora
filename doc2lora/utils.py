@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 try:
     import boto3
-    from botocore.exceptions import NoCredentialsError, ClientError
+    from botocore.exceptions import ClientError, NoCredentialsError
 except ImportError:
     boto3 = None
 
@@ -28,7 +28,9 @@ def load_env_file(env_file_path: Optional[str] = None) -> None:
         env_file_path: Path to the .env file. If None, looks for .env in current directory.
     """
     if load_dotenv is None:
-        logger.warning("python-dotenv not installed. Cannot load .env file. Install with: pip install python-dotenv")
+        logger.warning(
+            "python-dotenv not installed. Cannot load .env file. Install with: pip install python-dotenv"
+        )
         return
 
     if env_file_path:
@@ -250,7 +252,7 @@ def download_from_r2_bucket(
                 # Create local file path
                 if folder_prefix:
                     # Remove folder prefix from the key for local path
-                    relative_key = key[len(folder_prefix.rstrip("/") + "/"):]
+                    relative_key = key[len(folder_prefix.rstrip("/") + "/") :]
                 else:
                     relative_key = key
 

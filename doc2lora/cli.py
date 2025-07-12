@@ -209,6 +209,7 @@ def convert_r2(
     # Load .env file if provided
     if env_file:
         from .utils import load_env_file
+
         try:
             load_env_file(env_file)
             click.echo(f"Loaded credentials from: {env_file}")
@@ -232,7 +233,7 @@ def convert_r2(
             "  --aws-access-key-id and --aws-secret-access-key options, or\n"
             "  AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables, or\n"
             "  --env-file option pointing to a .env file",
-            err=True
+            err=True,
         )
         raise click.Abort()
 
@@ -243,7 +244,7 @@ def convert_r2(
             "  R2_ENDPOINT_URL environment variable, or\n"
             "  --env-file option pointing to a .env file\n"
             "  Example: https://your-account.r2.cloudflarestorage.com",
-            err=True
+            err=True,
         )
         raise click.Abort()
 

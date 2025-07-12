@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from .lora_trainer import LoRATrainer
 from .parsers import DocumentParser
-from .utils import download_from_r2_bucket, cleanup_temp_directory
+from .utils import cleanup_temp_directory, download_from_r2_bucket
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -161,5 +161,5 @@ def convert_from_r2(
 
     finally:
         # Clean up temporary directory
-        if cleanup_temp and 'temp_dir' in locals():
+        if cleanup_temp and "temp_dir" in locals():
             cleanup_temp_directory(temp_dir)

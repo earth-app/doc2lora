@@ -39,10 +39,13 @@ def main():
         print(f"📄 Found .env file at: {env_file_path}")
         try:
             from doc2lora.utils import load_env_file
+
             load_env_file(env_file_path)
             print("✅ Loaded credentials from .env file")
         except ImportError:
-            print("⚠️  python-dotenv not installed, falling back to environment variables")
+            print(
+                "⚠️  python-dotenv not installed, falling back to environment variables"
+            )
 
     BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "my-documents-bucket")
     FOLDER_PREFIX = os.getenv("R2_FOLDER_PREFIX", "training-docs")  # Optional
@@ -58,7 +61,9 @@ def main():
         print("  AWS_ACCESS_KEY_ID=your-r2-access-key-id")
         print("  AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key")
         print("  R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
-        print("  R2_BUCKET_NAME=your-bucket-name (optional, defaults to 'my-documents-bucket')")
+        print(
+            "  R2_BUCKET_NAME=your-bucket-name (optional, defaults to 'my-documents-bucket')"
+        )
         print("  R2_FOLDER_PREFIX=folder-prefix (optional)")
         print("\n2. .env file (recommended):")
         print("  Create a .env file with the following content:")
@@ -93,10 +98,10 @@ def main():
             output_path="r2_lora_adapter.json",
             model_name="microsoft/DialoGPT-small",  # Use small model for demo
             max_length=256,  # Smaller context for faster training
-            batch_size=2,    # Small batch size for demo
-            num_epochs=1,    # Just 1 epoch for demo
+            batch_size=2,  # Small batch size for demo
+            num_epochs=1,  # Just 1 epoch for demo
             learning_rate=5e-4,
-            lora_r=8,        # Smaller LoRA rank for demo
+            lora_r=8,  # Smaller LoRA rank for demo
             lora_alpha=16,
             lora_dropout=0.1,
             aws_access_key_id=AWS_ACCESS_KEY_ID,
