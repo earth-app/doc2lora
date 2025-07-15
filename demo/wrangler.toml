@@ -1,0 +1,16 @@
+name = "doc2lora-demo"
+main = "worker.js"
+compatibility_date = "2025-04-28"
+
+[ai]
+binding = "AI"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "doc2lora-adapters"
+
+[env.production]
+name = "doc2lora-demo-prod"
+
+[env.staging]
+name = "doc2lora-demo-staging"

@@ -8,6 +8,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+def setup_hf_authentication():
+    """Setup HuggingFace authentication from environment variable."""
+    hf_api_key = os.getenv("HF_API_KEY")
+    if hf_api_key:
+        print(f"✅ HuggingFace API key found: {hf_api_key[:8]}...")
+        # Set the token for transformers library
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_api_key
+        return True
+    else:
+        print("⚠️  HF_API_KEY environment variable not found.")
+        print("   For some models, you may need a HuggingFace API key.")
+        print("   Set it with: export HF_API_KEY=your_huggingface_token")
+        return False
+
+
 def create_sample_documents():
     """Create sample documents if they don't exist."""
     docs_path = Path(__file__).parent / "example_documents"
@@ -80,6 +95,18 @@ For production deployment:
 def demo_mistral_training():
     """Demonstrate training with Mistral model."""
     print("=== doc2lora Mistral Training Demo ===")
+
+    # Check for HuggingFace API key
+    hf_api_key = os.getenv("HF_API_KEY")
+    if not hf_api_key:
+        print("⚠️  HF_API_KEY environment variable not found")
+        print("   For better performance and to avoid rate limits, set:")
+        print("   export HF_API_KEY=your_huggingface_api_key")
+        print("   You can get one at: https://huggingface.co/settings/tokens")
+    else:
+        print("✅ HuggingFace API key found")
+        # Set the token for transformers
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_api_key
 
     # Create sample documents
     docs_path = create_sample_documents()
@@ -183,6 +210,9 @@ To use your trained LoRA adapter with Cloudflare Workers AI:
 def main():
     """Main demo function."""
     try:
+        # Setup HuggingFace authentication
+        setup_hf_authentication()
+
         # Run the Mistral training demo
         adapter_path = demo_mistral_training()
 

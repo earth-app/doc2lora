@@ -3,8 +3,9 @@
 import json
 import logging
 import os
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from .lora_trainer import LoRATrainer
 from .parsers import DocumentParser
@@ -16,12 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def convert(
-    documents_path: str,
+    input_data: Union[str, List[str], bytes, List[bytes], None] = None,
+    documents_path: Optional[str] = None,
     output_path: str = "lora_adapter.json",
     model_name: str = "microsoft/DialoGPT-small",
     max_length: int = 512,
     batch_size: int = 4,
-    num_epochs: int = 3,
+    num_epochs: Optional[int] = 3,
+    max_steps: Optional[int] = None,
     learning_rate: float = 5e-4,
     lora_r: int = 16,
     lora_alpha: int = 32,
@@ -29,15 +32,22 @@ def convert(
     **kwargs,
 ) -> str:
     """
-    Convert a folder of documents to LoRA adapter format.
+    Convert documents to LoRA adapter format.
 
     Args:
-        documents_path: Path to folder containing documents
+        input_data: Content to convert - can be:
+            - str: Single document content
+            - List[str]: Multiple document contents
+            - bytes: Single document as bytes
+            - List[bytes]: Multiple documents as bytes
+            - None: Use documents_path instead
+        documents_path: Path to folder containing documents (used if input_data is None)
         output_path: Path to save the LoRA adapter JSON file
         model_name: Base model name for fine-tuning
         max_length: Maximum sequence length for tokenization
         batch_size: Training batch size
-        num_epochs: Number of training epochs
+        num_epochs: Number of training epochs (ignored if max_steps is set)
+        max_steps: Maximum number of training steps (overrides num_epochs if set)
         learning_rate: Learning rate for training
         lora_r: LoRA rank parameter
         lora_alpha: LoRA alpha parameter
@@ -47,14 +57,25 @@ def convert(
     Returns:
         Path to the generated LoRA adapter file
     """
-    logger.info(f"Starting document conversion from: {documents_path}")
+    if input_data is None and documents_path is None:
+        raise ValueError("Either input_data or documents_path must be provided")
 
-    # Parse documents
-    parser = DocumentParser()
-    documents = parser.parse_directory(documents_path)
+    if input_data is not None and documents_path is not None:
+        raise ValueError("Cannot provide both input_data and documents_path")
+
+    documents = []
+
+    if input_data is not None:
+        logger.info("Processing provided input data")
+        documents = _process_input_data(input_data)
+    else:
+        logger.info(f"Starting document conversion from: {documents_path}")
+        # Parse documents from directory
+        parser = DocumentParser()
+        documents = parser.parse_directory(documents_path)
 
     if not documents:
-        raise ValueError(f"No supported documents found in {documents_path}")
+        raise ValueError("No documents to process")
 
     logger.info(f"Found {len(documents)} documents to process")
 
@@ -72,6 +93,7 @@ def convert(
         documents=documents,
         batch_size=batch_size,
         num_epochs=num_epochs,
+        max_steps=max_steps,
         learning_rate=learning_rate,
     )
 
@@ -82,6 +104,74 @@ def convert(
     return adapter_path
 
 
+def _process_input_data(input_data: Union[str, List[str], bytes, List[bytes]]) -> List[Dict[str, Any]]:
+    """
+    Process input data into document format.
+
+    Args:
+        input_data: Input data in various formats
+
+    Returns:
+        List of document dictionaries
+    """
+    documents = []
+
+    # Handle single string
+    if isinstance(input_data, str):
+        documents.append({
+            "content": input_data,
+            "filename": "input_document_0.txt",
+            "filepath": "memory://input_document_0.txt",
+            "extension": ".txt",
+            "size": len(input_data.encode('utf-8'))
+        })
+
+    # Handle list of strings
+    elif isinstance(input_data, list) and all(isinstance(item, str) for item in input_data):
+        for i, content in enumerate(input_data):
+            documents.append({
+                "content": content,
+                "filename": f"input_document_{i}.txt",
+                "filepath": f"memory://input_document_{i}.txt",
+                "extension": ".txt",
+                "size": len(content.encode('utf-8'))
+            })
+
+    # Handle single bytes
+    elif isinstance(input_data, bytes):
+        try:
+            content = input_data.decode('utf-8')
+            documents.append({
+                "content": content,
+                "filename": "input_document_0.txt",
+                "filepath": "memory://input_document_0.txt",
+                "extension": ".txt",
+                "size": len(input_data)
+            })
+        except UnicodeDecodeError:
+            raise ValueError("Unable to decode bytes input as UTF-8")
+
+    # Handle list of bytes
+    elif isinstance(input_data, list) and all(isinstance(item, bytes) for item in input_data):
+        for i, byte_content in enumerate(input_data):
+            try:
+                content = byte_content.decode('utf-8')
+                documents.append({
+                    "content": content,
+                    "filename": f"input_document_{i}.txt",
+                    "filepath": f"memory://input_document_{i}.txt",
+                    "extension": ".txt",
+                    "size": len(byte_content)
+                })
+            except UnicodeDecodeError:
+                raise ValueError(f"Unable to decode bytes input {i} as UTF-8")
+
+    else:
+        raise ValueError(f"Unsupported input_data type: {type(input_data)}")
+
+    return documents
+
+
 def convert_from_r2(
     bucket_name: str,
     folder_prefix: str = None,
@@ -89,7 +179,8 @@ def convert_from_r2(
     model_name: str = "microsoft/DialoGPT-small",
     max_length: int = 512,
     batch_size: int = 4,
-    num_epochs: int = 3,
+    num_epochs: Optional[int] = 3,
+    max_steps: Optional[int] = None,
     learning_rate: float = 5e-4,
     lora_r: int = 16,
     lora_alpha: int = 32,
@@ -150,6 +241,7 @@ def convert_from_r2(
             max_length=max_length,
             batch_size=batch_size,
             num_epochs=num_epochs,
+            max_steps=max_steps,
             learning_rate=learning_rate,
             lora_r=lora_r,
             lora_alpha=lora_alpha,

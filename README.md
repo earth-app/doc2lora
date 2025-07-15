@@ -47,13 +47,38 @@ python basic_usage.py
 
 To use the library, you can import it into your project and call the `convert` function with the path to the folder containing your documents, or use `convert_from_r2` to process documents from an R2 bucket. The library will handle the parsing and conversion of the documents into a format suitable for LoRA fine-tuning.
 
+The `convert` function now supports multiple input types:
+
+- **Folder path**: Pass a path to a folder containing documents
+- **Array of strings**: Pass document content directly as strings
+- **Array of bytes**: Pass document content as byte arrays
+- **Single string**: Pass individual document content
+- **Single bytes**: Pass individual document as bytes
+
 ### Local Documents
 
 ```py
 from doc2lora import convert
 
-# Convert a folder of documents to LoRA format
-convert("path/to/documents", output_path="path/to/output.json")
+# Method 1: Convert a folder of documents
+convert(documents_path="path/to/documents", output_path="path/to/output.json")
+
+# Method 2: Convert array of strings directly
+documents = [
+    "This is document 1 content...",
+    "This is document 2 content...",
+    "This is document 3 content..."
+]
+convert(input_data=documents, output_path="path/to/output.json")
+
+# Method 3: Convert single string
+document_content = "This is my document content..."
+convert(input_data=document_content, output_path="path/to/output.json")
+
+# Method 4: Convert array of bytes
+with open("doc1.txt", "rb") as f1, open("doc2.txt", "rb") as f2:
+    byte_documents = [f1.read(), f2.read()]
+convert(input_data=byte_documents, output_path="path/to/output.json")
 ```
 
 ### R2 Bucket Documents
@@ -135,16 +160,93 @@ doc2lora/
 │   └── utils.py        # Utility functions
 ├── examples/           # Example usage
 │   ├── basic_usage.py  # Working example script
+│   ├── mistral_usage.py # Mistral model example with HF API key
+│   ├── gemma_usage.py  # Gemma model example for Cloudflare AI
+│   ├── llama_usage.py  # Llama model example for Cloudflare AI
+│   ├── r2_usage.py     # R2 bucket integration example
 │   └── example_documents/  # Sample documents
 │       ├── sample.md
 │       ├── sample.txt
 │       ├── sample.json
 │       └── sample.csv
+├── demo/              # Complete working demonstration
+│   ├── data/          # Sample training documents about software development
+│   ├── scripts/       # Automation scripts (train_lora.sh/.bat, deploy_to_r2.sh/.bat)
+│   ├── worker.js      # Cloudflare Worker implementation
+│   ├── wrangler.toml  # Cloudflare Worker configuration
+│   ├── index.html     # Web interface for testing
+│   └── README.md      # Demo documentation
 ├── tests/             # Test suite
 ├── requirements.txt   # Dependencies
 ├── setup.py          # Package setup
 └── README.md         # This file
 ```
+
+## Examples
+
+The `examples/` directory contains usage examples for different models and scenarios:
+
+### Model-Specific Examples
+
+1. **`mistral_usage.py`** - Complete example for Mistral models with HuggingFace authentication
+
+   ```bash
+   cd examples
+   export HF_API_KEY="your_huggingface_token"  # Required for Mistral models
+   python mistral_usage.py
+   ```
+
+2. **`gemma_usage.py`** - Google Gemma model fine-tuning for Cloudflare Workers AI
+
+   ```bash
+   cd examples
+   python gemma_usage.py
+   ```
+
+3. **`llama_usage.py`** - Meta Llama 2 model fine-tuning with optimized parameters
+
+   ```bash
+   cd examples
+   python llama_usage.py
+   ```
+
+4. **`r2_usage.py`** - R2 bucket integration with .env file support
+
+   ```bash
+   cd examples
+   python r2_usage.py
+   ```
+
+### Demo Application
+
+The `demo/` folder contains a complete working demonstration of a Cloudflare Worker using a custom LoRA adapter:
+
+```bash
+# 1. Train a LoRA adapter on software development data
+cd demo
+./scripts/train_lora.sh  # or train_lora.bat on Windows
+
+# 2. Deploy the adapter to R2 bucket
+./scripts/deploy_to_r2.sh  # or deploy_to_r2.bat on Windows
+
+# 3. Deploy the Cloudflare Worker
+./scripts/wrangler_deploy.sh  # or wrangler_deploy.bat on Windows
+```
+
+The demo creates a **Software Developer Assistant** AI that provides guidance on:
+
+- Code development and architecture
+- Debugging and troubleshooting
+- Team collaboration and communication
+- Professional growth and career development
+- Technical decision-making
+
+**API Endpoints:**
+
+- `GET /health` - Health check
+- `POST /chat` - Send message and get response
+- `POST /chat/stream` - Streaming responses
+- `GET /docs` - API documentation
 
 ## Features
 

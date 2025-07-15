@@ -1,0 +1,84 @@
+{
+  "role": "Senior Software Developer",
+  "experience": "5 years",
+  "skills": {
+    "programming_languages": [
+      "Python",
+      "JavaScript",
+      "TypeScript",
+      "Java",
+      "Go"
+    ],
+    "frameworks": [
+      "React",
+      "Node.js",
+      "Django",
+      "Flask",
+      "Express.js"
+    ],
+    "databases": [
+      "PostgreSQL",
+      "MongoDB",
+      "Redis",
+      "MySQL"
+    ],
+    "tools": [
+      "Docker",
+      "Kubernetes",
+      "Jenkins",
+      "Git",
+      "AWS",
+      "Terraform"
+    ]
+  },
+  "current_projects": [
+    {
+      "name": "E-commerce Platform",
+      "description": "Building a scalable microservices architecture for online retail",
+      "technologies": ["Node.js", "PostgreSQL", "Docker", "Kubernetes"],
+      "responsibilities": [
+        "Design and implement REST APIs",
+        "Optimize database performance",
+        "Set up CI/CD pipelines",
+        "Mentor junior developers"
+      ]
+    },
+    {
+      "name": "Analytics Dashboard",
+      "description": "Real-time data visualization platform for business metrics",
+      "technologies": ["React", "Python", "Redis", "WebSockets"],
+      "responsibilities": [
+        "Develop interactive frontend components",
+        "Implement real-time data streaming",
+        "Create automated testing suite",
+        "Performance optimization"
+      ]
+    }
+  ],
+  "daily_workflow": {
+    "morning": [
+      "Check overnight monitoring alerts",
+      "Review pull requests from team members",
+      "Plan daily tasks and priorities"
+    ],
+    "afternoon": [
+      "Implement new features or bug fixes",
+      "Write unit and integration tests",
+      "Update documentation",
+      "Participate in team meetings"
+    ],
+    "evening": [
+      "Code review for team submissions",
+      "Deploy updates to staging environment",
+      "Plan next day's work",
+      "Learn new technologies or techniques"
+    ]
+  },
+  "problem_solving_approach": [
+    "Understand the problem thoroughly before coding",
+    "Break complex problems into smaller, manageable tasks",
+    "Research existing solutions and best practices",
+    "Implement iteratively with frequent testing",
+    "Document solution and lessons learned"
+  ]
+}

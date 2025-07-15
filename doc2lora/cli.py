@@ -3,6 +3,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -42,6 +43,7 @@ def cli():
 )
 @click.option("--batch-size", default=4, help="Training batch size")
 @click.option("--epochs", default=3, help="Number of training epochs")
+@click.option("--max-steps", default=None, type=int, help="Maximum number of training steps (overrides epochs if set)")
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
 @click.option("--lora-r", default=16, help="LoRA rank parameter")
 @click.option("--lora-alpha", default=32, help="LoRA alpha parameter")
@@ -54,6 +56,7 @@ def convert_cmd(
     max_length: int,
     batch_size: int,
     epochs: int,
+    max_steps: Optional[int],
     learning_rate: float,
     lora_r: int,
     lora_alpha: int,
@@ -74,7 +77,8 @@ def convert_cmd(
             model_name=model,
             max_length=max_length,
             batch_size=batch_size,
-            num_epochs=epochs,
+            num_epochs=epochs if max_steps is None else None,
+            max_steps=max_steps,
             learning_rate=learning_rate,
             lora_r=lora_r,
             lora_alpha=lora_alpha,
@@ -154,6 +158,7 @@ def formats():
 )
 @click.option("--batch-size", default=4, help="Training batch size")
 @click.option("--epochs", default=3, help="Number of training epochs")
+@click.option("--max-steps", default=None, type=int, help="Maximum number of training steps (overrides epochs if set)")
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
 @click.option("--lora-r", default=16, help="LoRA rank parameter")
 @click.option("--lora-alpha", default=32, help="LoRA alpha parameter")
@@ -191,6 +196,7 @@ def convert_r2(
     max_length: int,
     batch_size: int,
     epochs: int,
+    max_steps: Optional[int],
     learning_rate: float,
     lora_r: int,
     lora_alpha: int,
@@ -261,7 +267,8 @@ def convert_r2(
             model_name=model,
             max_length=max_length,
             batch_size=batch_size,
-            num_epochs=epochs,
+            num_epochs=epochs if max_steps is None else None,
+            max_steps=max_steps,
             learning_rate=learning_rate,
             lora_r=lora_r,
             lora_alpha=lora_alpha,

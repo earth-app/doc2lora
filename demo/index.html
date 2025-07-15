@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>doc2lora Demo - Software Developer Assistant</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .chat-container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            background: #f9f9f9;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background: #e3f2fd;
+            text-align: right;
+        }
+        .ai-message {
+            background: #f1f8e9;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .suggestions {
+            margin: 20px 0;
+        }
+        .suggestion {
+            background: #ecf0f1;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            border-left: 4px solid #3498db;
+        }
+        .suggestion:hover {
+            background: #d5dbdb;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .error {
+            color: #e74c3c;
+            background: #fdf2f2;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 doc2lora Demo</h1>
+        <p><strong>Software Developer Assistant</strong></p>
+        <p>This assistant has been trained on software developer documentation using doc2lora. Ask questions about development practices, daily tasks, or technical skills!</p>
+
+        <div class="suggestions">
+            <h3>💡 Try these example questions:</h3>
+            <div class="suggestion" onclick="askQuestion('What are my daily responsibilities as a software developer?')">
+                What are my daily responsibilities as a software developer?
+            </div>
+            <div class="suggestion" onclick="askQuestion('What technologies and frameworks do I work with?')">
+                What technologies and frameworks do I work with?
+            </div>
+            <div class="suggestion" onclick="askQuestion('How do I approach problem-solving in development?')">
+                How do I approach problem-solving in development?
+            </div>
+            <div class="suggestion" onclick="askQuestion('What are the best practices I follow for code quality?')">
+                What are the best practices I follow for code quality?
+            </div>
+            <div class="suggestion" onclick="askQuestion('What is my current tech stack and development environment?')">
+                What is my current tech stack and development environment?
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div id="messages"></div>
+            <input type="text" id="messageInput" placeholder="Ask a question about software development..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()" id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const WORKER_URL = 'https://doc2lora-demo.your-subdomain.workers.dev'; // Update this URL
+
+        function addMessage(content, isUser = false) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
+            messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function askQuestion(question) {
+            document.getElementById('messageInput').value = question;
+            sendMessage();
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const button = document.getElementById('sendButton');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, true);
+
+            // Clear input and disable button
+            input.value = '';
+            button.disabled = true;
+            button.textContent = 'Thinking...';
+
+            // Add loading message
+            addMessage('🤔 Thinking...', false);
+
+            try {
+                const response = await fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                const messages = document.getElementById('messages');
+                messages.removeChild(messages.lastChild);
+
+                if (data.success) {
+                    addMessage(data.response, false);
+                } else {
+                    addMessage(`<div class="error">❌ Error: ${data.error}</div>`, false);
+                }
+            } catch (error) {
+                // Remove loading message
+                const messages = document.getElementById('messages');
+                messages.removeChild(messages.lastChild);
+
+                addMessage(`<div class="error">❌ Network error: ${error.message}<br><br>Make sure to update the WORKER_URL in this HTML file to point to your deployed Worker.</div>`, false);
+            }
+
+            // Re-enable button
+            button.disabled = false;
+            button.textContent = 'Send';
+            input.focus();
+        }
+
+        // Add welcome message
+        addMessage('👋 Hello! I\'m your software developer assistant, trained using doc2lora. Ask me anything about development practices, daily tasks, or technical skills!', false);
+    </script>
+</body>
+</html>

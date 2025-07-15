@@ -1,0 +1,44 @@
+Software Development Best Practices
+
+Version Control Management:
+- Use Git for all projects with clear commit messages
+- Create feature branches for new development work
+- Perform code reviews before merging to main branch
+- Tag releases with semantic versioning
+- Maintain a clean commit history through squashing
+
+Code Quality Standards:
+- Write self-documenting code with meaningful variable names
+- Follow language-specific style guides (PEP 8 for Python, ESLint for JavaScript)
+- Implement proper error handling and logging
+- Use consistent indentation and formatting
+- Remove dead code and unused imports regularly
+
+Testing Methodology:
+- Write unit tests for all business logic functions
+- Implement integration tests for API endpoints
+- Use test-driven development (TDD) when appropriate
+- Maintain minimum 80% code coverage
+- Run automated tests in CI/CD pipeline
+
+Security Practices:
+- Validate and sanitize all user inputs
+- Use parameterized queries to prevent SQL injection
+- Implement proper authentication and authorization
+- Keep dependencies updated to patch security vulnerabilities
+- Store sensitive data using encryption
+- Never commit secrets or API keys to version control
+
+Performance Optimization:
+- Profile code to identify bottlenecks
+- Optimize database queries with proper indexing
+- Implement caching strategies where appropriate
+- Use lazy loading for large datasets
+- Monitor application performance in production
+
+Collaboration Guidelines:
+- Participate actively in code reviews
+- Share knowledge through documentation and team sessions
+- Follow agreed-upon coding conventions
+- Communicate clearly about design decisions
+- Ask for help when stuck to avoid prolonged blocking

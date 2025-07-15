@@ -67,8 +67,13 @@ class LoRATrainer:
         """Load the base model and tokenizer."""
         logger.info(f"Loading model: {self.model_name}")
 
+        # Get HuggingFace token from environment
+        import os
+        hf_token = os.getenv('HF_API_KEY') or os.getenv('HUGGINGFACE_API_TOKEN')
+        auth_kwargs = {'token': hf_token} if hf_token else {}
+
         # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, **auth_kwargs)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -77,6 +82,7 @@ class LoRATrainer:
             self.model_name,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto" if torch.cuda.is_available() else None,
+            **auth_kwargs
         )
 
         # Auto-detect target modules if not provided
@@ -139,7 +145,8 @@ class LoRATrainer:
         self,
         documents: List[Dict[str, Any]],
         batch_size: int = 4,
-        num_epochs: int = 3,
+        num_epochs: Optional[int] = 3,
+        max_steps: Optional[int] = None,
         learning_rate: float = 5e-4,
         output_dir: str = "./lora_training_output",
     ):
@@ -149,7 +156,8 @@ class LoRATrainer:
         Args:
             documents: List of parsed documents
             batch_size: Training batch size
-            num_epochs: Number of training epochs
+            num_epochs: Number of training epochs (ignored if max_steps is set)
+            max_steps: Maximum number of training steps (overrides num_epochs if set)
             learning_rate: Learning rate for training
             output_dir: Directory to save training outputs
         """
@@ -159,20 +167,29 @@ class LoRATrainer:
         dataset = self._prepare_dataset(documents)
 
         # Training arguments
-        training_args = TrainingArguments(
-            output_dir=output_dir,
-            num_train_epochs=num_epochs,
-            per_device_train_batch_size=batch_size,
-            gradient_accumulation_steps=1,
-            warmup_steps=100,
-            learning_rate=learning_rate,
-            fp16=torch.cuda.is_available(),
-            logging_steps=10,
-            save_strategy="epoch",
-            remove_unused_columns=False,
-            dataloader_drop_last=True,
-            report_to=None,
-        )
+        # Prepare training arguments
+        training_kwargs = {
+            "output_dir": output_dir,
+            "per_device_train_batch_size": batch_size,
+            "gradient_accumulation_steps": 1,
+            "warmup_steps": 100,
+            "learning_rate": learning_rate,
+            "fp16": torch.cuda.is_available(),
+            "logging_steps": 10,
+            "save_strategy": "epoch" if max_steps is None else "steps",
+            "remove_unused_columns": False,
+            "dataloader_drop_last": True,
+            "report_to": None,
+        }
+
+        # Set either epochs or max_steps
+        if max_steps is not None:
+            training_kwargs["max_steps"] = max_steps
+            training_kwargs["save_steps"] = max(1, max_steps // 10)  # Save every 10% of training
+        else:
+            training_kwargs["num_train_epochs"] = num_epochs or 3
+
+        training_args = TrainingArguments(**training_kwargs)
 
         # Data collator
         data_collator = DataCollatorForLanguageModeling(

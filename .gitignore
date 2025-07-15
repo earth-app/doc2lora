@@ -159,10 +159,6 @@ examples/output/
 *.pt
 *.pth
 
-# Data files
-data/
-datasets/
-
 # Temporary files
 temp/
 tmp/
