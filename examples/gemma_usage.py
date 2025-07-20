@@ -31,7 +31,6 @@ const response = await env.AI.run("@cf/google/gemma-7b-it-lora", {
   lora: "my-custom-adapter"
 });
 ```""",
-
         "gemma_technical_guide.md": """# Gemma Model Integration Guide
 
 ## Overview
@@ -61,7 +60,6 @@ Google Gemma models are designed for responsible AI development and offer excell
 ## Integration with Cloudflare Workers AI
 Gemma models on Cloudflare Workers AI support custom LoRA adapters for domain-specific fine-tuning.
 """,
-
         "gemma_training_data.json": """{
   "conversations": [
     {
@@ -69,7 +67,7 @@ Gemma models on Cloudflare Workers AI support custom LoRA adapters for domain-sp
       "assistant": "Gemma models offer several key benefits: 1) They're lightweight and efficient, making them suitable for deployment in resource-constrained environments. 2) They're open source with a permissive license. 3) They're instruction-tuned for better chat performance. 4) They're built with safety considerations in mind. 5) They can be fine-tuned with LoRA for specific use cases."
     }
   ]
-}"""
+}""",
     }
 
     for filename, content in samples.items():
@@ -109,12 +107,12 @@ def demo_gemma_training():
             documents_path=str(docs_path),
             output_path=str(adapter_output),
             model_name="google/gemma-7b-it",  # Use Gemma model
-            max_length=1024,     # Gemma supports longer contexts
-            batch_size=1,        # Small batch for memory efficiency
-            num_epochs=3,        # Good balance for Gemma
+            max_length=1024,  # Gemma supports longer contexts
+            batch_size=1,  # Small batch for memory efficiency
+            num_epochs=3,  # Good balance for Gemma
             learning_rate=2e-4,  # Optimal for Gemma fine-tuning
-            lora_r=16,          # Good rank for Gemma
-            lora_alpha=32,      # 2x rank ratio
+            lora_r=16,  # Good rank for Gemma
+            lora_alpha=32,  # 2x rank ratio
             lora_dropout=0.05,  # Lower dropout for Gemma
         )
 
@@ -134,7 +132,9 @@ def demo_gemma_training():
         print("💡 This is a demo - actual training requires ML dependencies")
 
         # Create a dummy adapter file for demo purposes
-        adapter_output.write_text('{"model": "gemma-7b-it", "type": "lora", "status": "demo"}')
+        adapter_output.write_text(
+            '{"model": "gemma-7b-it", "type": "lora", "status": "demo"}'
+        )
         print(f"📦 Created demo adapter file: {adapter_output}")
         return str(adapter_output)
 
@@ -145,7 +145,8 @@ def show_cloudflare_usage(adapter_path):
     print("☁️  Cloudflare Workers AI Integration")
     print(f"{'='*60}")
 
-    print("""
+    print(
+        """
 🔧 To use your Gemma LoRA adapter with Cloudflare Workers AI:
 
 1. **Upload your adapter**:
@@ -181,7 +182,8 @@ def show_cloudflare_usage(adapter_path):
 - Use diverse, high-quality training data
 - Keep LoRA rank between 8-16 for best results
 - Monitor training loss to prevent overfitting
-""")
+"""
+    )
 
 
 def main():
@@ -197,7 +199,8 @@ def main():
         print(f"\n{'='*60}")
         print("📚 Gemma Resources")
         print(f"{'='*60}")
-        print("""
+        print(
+            """
 🔗 **Useful Links:**
 - Gemma Model: https://huggingface.co/google/gemma-7b-it
 - Cloudflare Workers AI: https://developers.cloudflare.com/workers-ai/
@@ -207,7 +210,8 @@ def main():
 - Start with small datasets for testing
 - Use validation data to monitor progress
 - Experiment with different LoRA parameters
-""")
+"""
+        )
 
     except Exception as e:
         print(f"❌ Demo failed: {e}")

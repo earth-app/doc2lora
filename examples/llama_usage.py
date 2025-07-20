@@ -35,7 +35,6 @@ const response = await env.AI.run("@cf/meta-llama/llama-2-7b-chat-hf-lora", {
   lora: "my-custom-llama-adapter"
 });
 ```""",
-
         "llama_technical_guide.md": """# Llama 2 Model Integration Guide
 
 ## Overview
@@ -59,7 +58,6 @@ Llama 2 is a collection of pretrained and fine-tuned generative text models rang
    - Epochs: 2-4
    - Context length: Up to 4096 tokens
 """,
-
         "llama_training_data.json": """{
   "conversations": [
     {
@@ -68,7 +66,7 @@ Llama 2 is a collection of pretrained and fine-tuned generative text models rang
       "assistant": "Llama 2 offers several advantages for chat applications: 1) It's specifically fine-tuned for dialogue with human feedback (RLHF), making responses more natural and helpful. 2) It has strong safety measures built-in through extensive red-teaming. 3) It maintains context well across long conversations. 4) It follows instructions accurately and can handle complex, multi-turn dialogues."
     }
   ]
-}"""
+}""",
     }
 
     for filename, content in samples.items():
@@ -108,12 +106,12 @@ def demo_llama_training():
             documents_path=str(docs_path),
             output_path=str(adapter_output),
             model_name="meta-llama/Llama-2-7b-chat-hf",  # Use Llama 2 Chat model
-            max_length=2048,     # Llama 2 supports up to 4096, using 2048 for efficiency
-            batch_size=1,        # Small batch due to memory requirements
-            num_epochs=3,        # Good balance for Llama 2
+            max_length=2048,  # Llama 2 supports up to 4096, using 2048 for efficiency
+            batch_size=1,  # Small batch due to memory requirements
+            num_epochs=3,  # Good balance for Llama 2
             learning_rate=2e-4,  # Optimal for Llama 2 fine-tuning
-            lora_r=32,          # Higher rank for Llama 2's complexity
-            lora_alpha=64,      # 2x rank ratio
+            lora_r=32,  # Higher rank for Llama 2's complexity
+            lora_alpha=64,  # 2x rank ratio
             lora_dropout=0.05,  # Low dropout for stable training
         )
 
@@ -133,7 +131,9 @@ def demo_llama_training():
         print("💡 This is a demo - actual training requires ML dependencies")
 
         # Create a dummy adapter file for demo purposes
-        adapter_output.write_text('{"model": "llama-2-7b-chat-hf", "type": "lora", "status": "demo"}')
+        adapter_output.write_text(
+            '{"model": "llama-2-7b-chat-hf", "type": "lora", "status": "demo"}'
+        )
         print(f"📦 Created demo adapter file: {adapter_output}")
         return str(adapter_output)
 
@@ -144,7 +144,8 @@ def show_cloudflare_usage(adapter_path):
     print("☁️  Cloudflare Workers AI Integration")
     print(f"{'='*60}")
 
-    print("""
+    print(
+        """
 🔧 To use your Llama 2 LoRA adapter with Cloudflare Workers AI:
 
 1. **Upload your adapter**:
@@ -181,7 +182,8 @@ def show_cloudflare_usage(adapter_path):
 - Use proper chat format in training data
 - Include diverse conversation examples
 - Monitor memory usage (Llama 2 is memory-intensive)
-""")
+"""
+    )
 
 
 def main():
@@ -197,7 +199,8 @@ def main():
         print(f"\n{'='*60}")
         print("📚 Llama 2 Resources")
         print(f"{'='*60}")
-        print("""
+        print(
+            """
 🔗 **Useful Links:**
 - Llama 2 Model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
 - Cloudflare Workers AI: https://developers.cloudflare.com/workers-ai/
@@ -207,7 +210,8 @@ def main():
 - Always use the chat format for Llama 2-Chat models
 - Include system messages to guide behavior
 - Use diverse training examples for better generalization
-""")
+"""
+        )
 
     except Exception as e:
         print(f"❌ Demo failed: {e}")

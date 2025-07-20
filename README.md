@@ -248,6 +248,80 @@ The demo creates a **Software Developer Assistant** AI that provides guidance on
 - `POST /chat/stream` - Streaming responses
 - `GET /docs` - API documentation
 
+## Configuration
+
+### GPU Support
+
+🚀 **Automatic GPU Detection**: doc2lora now automatically detects and uses the best available device for training:
+
+**Device Priority (Automatic):**
+
+1. 🚀 **NVIDIA GPU (CUDA)** - Fastest training with fp16 precision and optimal memory usage
+2. 🍎 **Apple Silicon (MPS)** - Good performance on Mac M1/M2/M3
+3. 💻 **CPU** - Reliable fallback, works everywhere
+
+**Automatic Detection (Recommended):**
+
+```bash
+# Will automatically use GPU if available, fallback to CPU
+doc2lora convert ./docs --output adapter.json
+```
+
+**Manual Device Selection:**
+
+```bash
+# Force GPU usage
+doc2lora convert ./docs --output adapter.json --device cuda
+
+# Force CPU usage (useful for troubleshooting)
+doc2lora convert ./docs --output adapter.json --device cpu
+
+# Use Apple Silicon GPU (Mac M1/M2/M3)
+doc2lora convert ./docs --output adapter.json --device mps
+```
+
+**Python API:**
+
+```python
+from doc2lora import convert
+
+# Auto-detect device (recommended)
+convert(documents_path="./docs", output_path="adapter.json")
+
+# Specify device manually
+convert(documents_path="./docs", output_path="adapter.json", device="cuda")
+convert(documents_path="./docs", output_path="adapter.json", device="cpu")
+convert(documents_path="./docs", output_path="adapter.json", device="mps")  # Apple Silicon
+```
+
+**GPU Requirements:**
+
+- **NVIDIA GPUs**: Requires CUDA-compatible PyTorch installation
+- **Apple Silicon**: Requires PyTorch with MPS support (automatically included on macOS)
+- **Memory**: 8GB+ GPU memory recommended for larger models
+
+### Training Parameters
+
+Common configuration options:
+
+```bash
+doc2lora convert ./docs \
+    --model mistralai/Mistral-7B-Instruct-v0.2 \
+    --batch-size 2 \
+    --epochs 3 \
+    --learning-rate 2e-4 \
+    --lora-r 16 \
+    --lora-alpha 32 \
+    --device auto  # or cuda/mps/cpu
+```
+
+**Memory Management:**
+
+- 🚀 **GPU Training**: Automatically uses fp16 precision on CUDA GPUs to save memory
+- 🔧 **Out of Memory**: Reduce `--batch-size` if you encounter GPU memory errors
+- 💻 **CPU Fallback**: Use `--device cpu` if GPU memory is insufficient
+- ⚡ **Automatic Optimization**: The system automatically chooses optimal settings per device
+
 ## Features
 
 - ✅ **Document Parsing**: Recursively scan directories for supported document types

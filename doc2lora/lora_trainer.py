@@ -26,6 +26,31 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+def get_device():
+    """
+    Detect and return the best available device for training.
+
+    Returns:
+        torch.device: The device to use for training
+    """
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        gpu_count = torch.cuda.device_count()
+        gpu_name = torch.cuda.get_device_name(0)
+        total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        logger.info(f"🚀 GPU detected: {gpu_name} ({total_memory:.1f} GB)")
+        logger.info(f"📊 Available GPUs: {gpu_count}")
+        return device
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+        logger.info("🍎 Using Apple Metal Performance Shaders (MPS)")
+        return device
+    else:
+        device = torch.device("cpu")
+        logger.info("💻 Using CPU (GPU not available)")
+        return device
+
+
 class LoRATrainer:
     """LoRA trainer for fine-tuning language models on document data."""
 
@@ -37,6 +62,7 @@ class LoRATrainer:
         lora_alpha: int = 32,
         lora_dropout: float = 0.1,
         target_modules: Optional[List[str]] = None,
+        device: Optional[str] = None,
     ):
         """
         Initialize the LoRA trainer.
@@ -48,6 +74,7 @@ class LoRATrainer:
             lora_alpha: LoRA alpha parameter
             lora_dropout: LoRA dropout rate
             target_modules: Target modules for LoRA adaptation
+            device: Device to use for training ('cuda', 'mps', 'cpu', or None for auto-detection)
         """
         self.model_name = model_name
         self.max_length = max_length
@@ -55,6 +82,13 @@ class LoRATrainer:
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
         self.target_modules = target_modules  # Will be auto-detected if None
+
+        # Detect and set device
+        if device is None:
+            self.device = get_device()
+        else:
+            self.device = torch.device(device)
+            logger.info(f"🔧 Using specified device: {self.device}")
 
         # Initialize model and tokenizer
         self.tokenizer = None
@@ -69,21 +103,72 @@ class LoRATrainer:
 
         # Get HuggingFace token from environment
         import os
-        hf_token = os.getenv('HF_API_KEY') or os.getenv('HUGGINGFACE_API_TOKEN')
-        auth_kwargs = {'token': hf_token} if hf_token else {}
+
+        hf_token = os.getenv("HF_API_KEY") or os.getenv("HUGGINGFACE_API_TOKEN")
+        auth_kwargs = {"token": hf_token} if hf_token else {}
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, **auth_kwargs)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Load model
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if torch.cuda.is_available() else None,
-            **auth_kwargs
-        )
+        # Determine dtype and device mapping based on available device
+        is_gpu_available = self.device.type in ["cuda", "mps"]
+
+        if is_gpu_available:
+            torch_dtype = torch.float16
+            # Avoid device_map="auto" for LoRA training to prevent meta tensor issues
+            device_map = None
+            logger.info(f"💾 Using {torch_dtype} precision for GPU training")
+        else:
+            torch_dtype = torch.float32
+            device_map = None
+            logger.info("💾 Using float32 precision for CPU training")
+
+        try:
+            # Load model with device-specific settings
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=torch_dtype,
+                device_map=device_map,
+                low_cpu_mem_usage=True,
+                **auth_kwargs,
+            )
+
+            # Move model to device
+            self.model = self.model.to(self.device)
+            logger.info(f"📱 Model loaded successfully on {self.device}")
+
+        except torch.cuda.OutOfMemoryError as e:
+            logger.warning(f"⚠️  GPU out of memory, falling back to CPU: {e}")
+            # Fallback to CPU
+            self.device = torch.device("cpu")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float32,
+                device_map=None,
+                low_cpu_mem_usage=True,
+                **auth_kwargs,
+            )
+            self.model = self.model.to(self.device)
+            logger.info("💻 Successfully loaded model on CPU")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load model on {self.device}: {e}")
+            if self.device.type != "cpu":
+                logger.info("🔄 Attempting to load on CPU as fallback...")
+                self.device = torch.device("cpu")
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    torch_dtype=torch.float32,
+                    device_map=None,
+                    low_cpu_mem_usage=True,
+                    **auth_kwargs,
+                )
+                self.model = self.model.to(self.device)
+                logger.info("💻 Successfully loaded model on CPU")
+            else:
+                raise
 
         # Auto-detect target modules if not provided
         if self.target_modules is None:
@@ -103,6 +188,8 @@ class LoRATrainer:
         # Apply LoRA to model
         self.peft_model = get_peft_model(self.model, lora_config)
         self.peft_model.print_trainable_parameters()
+
+        logger.info(f"✅ Model successfully loaded on {self.device}")
 
     def _prepare_dataset(self, documents: List[Dict[str, Any]]) -> Dataset:
         """
@@ -168,13 +255,16 @@ class LoRATrainer:
 
         # Training arguments
         # Prepare training arguments
+        is_gpu_available = self.device.type in ["cuda", "mps"]
+
         training_kwargs = {
             "output_dir": output_dir,
             "per_device_train_batch_size": batch_size,
             "gradient_accumulation_steps": 1,
             "warmup_steps": 100,
             "learning_rate": learning_rate,
-            "fp16": torch.cuda.is_available(),
+            "fp16": is_gpu_available
+            and self.device.type == "cuda",  # Only use fp16 on CUDA
             "logging_steps": 10,
             "save_strategy": "epoch" if max_steps is None else "steps",
             "remove_unused_columns": False,
@@ -182,10 +272,23 @@ class LoRATrainer:
             "report_to": None,
         }
 
+        # Log training configuration
+        logger.info(f"🏋️  Training configuration:")
+        logger.info(f"   Device: {self.device}")
+        logger.info(f"   Batch size: {batch_size}")
+        logger.info(f"   Learning rate: {learning_rate}")
+        logger.info(f"   FP16: {training_kwargs['fp16']}")
+        if not is_gpu_available:
+            logger.info(
+                "   ⚡ Tip: Training on CPU will be slower. Consider using a GPU for faster training."
+            )
+
         # Set either epochs or max_steps
         if max_steps is not None:
             training_kwargs["max_steps"] = max_steps
-            training_kwargs["save_steps"] = max(1, max_steps // 10)  # Save every 10% of training
+            training_kwargs["save_steps"] = max(
+                1, max_steps // 10
+            )  # Save every 10% of training
         else:
             training_kwargs["num_train_epochs"] = num_epochs or 3
 

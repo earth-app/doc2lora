@@ -129,6 +129,7 @@ doc2lora formats
 - `--batch-size`: Training batch size (default: 4)
 - `--learning-rate`: Learning rate (default: 5e-4)
 - `--max-length`: Maximum sequence length (default: 512)
+- `--device`: Device for training - `auto` (default), `cuda`, `mps`, or `cpu`
 
 ### LoRA Parameters
 
@@ -163,9 +164,15 @@ python -m pytest tests/
 
 ## Hardware Requirements
 
-- **GPU Recommended**: CUDA-compatible GPU for faster training
+- **GPU Recommended**: NVIDIA CUDA GPU or Apple Silicon (M1/M2) for faster training
 - **Memory**: At least 8GB RAM, 16GB+ recommended for larger models
 - **Storage**: Adequate space for model weights and training data
+
+**Automatic Device Detection:**
+doc2lora automatically detects and uses the best available device:
+1. 🚀 NVIDIA GPU (CUDA) - Uses fp16 precision for memory efficiency
+2. 🍎 Apple Silicon (MPS) - Good performance on Mac M1/M2
+3. 💻 CPU - Reliable fallback, works everywhere
 
 ## Model Recommendations
 
@@ -188,17 +195,36 @@ python -m pytest tests/
 
 ### Common Issues
 
-1. **CUDA out of memory**: Reduce batch size or max length
+1. **GPU out of memory**: Reduce batch size (`--batch-size 1`) or use CPU (`--device cpu`)
 2. **Missing dependencies**: Install with `pip install -e .`
 3. **PDF parsing errors**: Ensure PyPDF2 is installed
-4. **Slow training**: Use GPU and reduce dataset size for testing
+4. **Slow training**: GPU is automatically used when available; reduce dataset size for testing
 
 ### Performance Tips
 
-- Use GPU acceleration when available
+- GPU acceleration is automatically enabled when available
+- Use `--device cpu` to force CPU usage for troubleshooting
 - Start with smaller batch sizes and increase gradually
 - Monitor memory usage during training
 - Use smaller models for initial testing
+
+### Device-Specific Tips
+
+**NVIDIA GPU (CUDA):**
+
+- Automatically uses fp16 precision for memory efficiency
+- Best performance for training
+
+**Apple Silicon (MPS):**
+
+- Good performance on Mac M1/M2
+- Automatically detected and used
+
+**CPU Fallback:**
+
+- Automatically used when GPU is not available
+- Slower but reliable
+- Use `--device cpu` to force CPU usage
 
 ## R2 Bucket Setup
 

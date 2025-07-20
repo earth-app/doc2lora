@@ -29,6 +29,7 @@ def convert(
     lora_r: int = 16,
     lora_alpha: int = 32,
     lora_dropout: float = 0.1,
+    device: Optional[str] = None,
     **kwargs,
 ) -> str:
     """
@@ -52,6 +53,7 @@ def convert(
         lora_r: LoRA rank parameter
         lora_alpha: LoRA alpha parameter
         lora_dropout: LoRA dropout rate
+        device: Device to use for training ('cuda', 'mps', 'cpu', or None for auto-detection)
         **kwargs: Additional arguments
 
     Returns:
@@ -86,6 +88,7 @@ def convert(
         lora_r=lora_r,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        device=device,
     )
 
     # Train the model
@@ -104,7 +107,9 @@ def convert(
     return adapter_path
 
 
-def _process_input_data(input_data: Union[str, List[str], bytes, List[bytes]]) -> List[Dict[str, Any]]:
+def _process_input_data(
+    input_data: Union[str, List[str], bytes, List[bytes]],
+) -> List[Dict[str, Any]]:
     """
     Process input data into document format.
 
@@ -118,51 +123,63 @@ def _process_input_data(input_data: Union[str, List[str], bytes, List[bytes]]) -
 
     # Handle single string
     if isinstance(input_data, str):
-        documents.append({
-            "content": input_data,
-            "filename": "input_document_0.txt",
-            "filepath": "memory://input_document_0.txt",
-            "extension": ".txt",
-            "size": len(input_data.encode('utf-8'))
-        })
-
-    # Handle list of strings
-    elif isinstance(input_data, list) and all(isinstance(item, str) for item in input_data):
-        for i, content in enumerate(input_data):
-            documents.append({
-                "content": content,
-                "filename": f"input_document_{i}.txt",
-                "filepath": f"memory://input_document_{i}.txt",
-                "extension": ".txt",
-                "size": len(content.encode('utf-8'))
-            })
-
-    # Handle single bytes
-    elif isinstance(input_data, bytes):
-        try:
-            content = input_data.decode('utf-8')
-            documents.append({
-                "content": content,
+        documents.append(
+            {
+                "content": input_data,
                 "filename": "input_document_0.txt",
                 "filepath": "memory://input_document_0.txt",
                 "extension": ".txt",
-                "size": len(input_data)
-            })
-        except UnicodeDecodeError:
-            raise ValueError("Unable to decode bytes input as UTF-8")
+                "size": len(input_data.encode("utf-8")),
+            }
+        )
 
-    # Handle list of bytes
-    elif isinstance(input_data, list) and all(isinstance(item, bytes) for item in input_data):
-        for i, byte_content in enumerate(input_data):
-            try:
-                content = byte_content.decode('utf-8')
-                documents.append({
+    # Handle list of strings
+    elif isinstance(input_data, list) and all(
+        isinstance(item, str) for item in input_data
+    ):
+        for i, content in enumerate(input_data):
+            documents.append(
+                {
                     "content": content,
                     "filename": f"input_document_{i}.txt",
                     "filepath": f"memory://input_document_{i}.txt",
                     "extension": ".txt",
-                    "size": len(byte_content)
-                })
+                    "size": len(content.encode("utf-8")),
+                }
+            )
+
+    # Handle single bytes
+    elif isinstance(input_data, bytes):
+        try:
+            content = input_data.decode("utf-8")
+            documents.append(
+                {
+                    "content": content,
+                    "filename": "input_document_0.txt",
+                    "filepath": "memory://input_document_0.txt",
+                    "extension": ".txt",
+                    "size": len(input_data),
+                }
+            )
+        except UnicodeDecodeError:
+            raise ValueError("Unable to decode bytes input as UTF-8")
+
+    # Handle list of bytes
+    elif isinstance(input_data, list) and all(
+        isinstance(item, bytes) for item in input_data
+    ):
+        for i, byte_content in enumerate(input_data):
+            try:
+                content = byte_content.decode("utf-8")
+                documents.append(
+                    {
+                        "content": content,
+                        "filename": f"input_document_{i}.txt",
+                        "filepath": f"memory://input_document_{i}.txt",
+                        "extension": ".txt",
+                        "size": len(byte_content),
+                    }
+                )
             except UnicodeDecodeError:
                 raise ValueError(f"Unable to decode bytes input {i} as UTF-8")
 
@@ -185,6 +202,7 @@ def convert_from_r2(
     lora_r: int = 16,
     lora_alpha: int = 32,
     lora_dropout: float = 0.1,
+    device: Optional[str] = None,
     aws_access_key_id: str = None,
     aws_secret_access_key: str = None,
     endpoint_url: str = None,
@@ -208,6 +226,7 @@ def convert_from_r2(
         lora_r: LoRA rank parameter
         lora_alpha: LoRA alpha parameter
         lora_dropout: LoRA dropout rate
+        device: Device to use for training ('cuda', 'mps', 'cpu', or None for auto-detection)
         aws_access_key_id: AWS access key ID for R2
         aws_secret_access_key: AWS secret access key for R2
         endpoint_url: R2 endpoint URL
@@ -246,6 +265,7 @@ def convert_from_r2(
             lora_r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
+            device=device,
             **kwargs,
         )
 

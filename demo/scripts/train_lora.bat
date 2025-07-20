@@ -5,6 +5,9 @@ REM train_lora.bat - Windows batch script to train a LoRA adapter using demo dat
 echo 🚀 Starting LoRA Training with Demo Data
 echo ========================================
 
+REM Check GPU availability
+python -c "import torch; print('🚀 GPU Available:' if torch.cuda.is_available() else '💻 Using CPU'); print(f'Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"CPU\"}')" 2>nul
+
 REM Configuration (relative to demo directory)
 set DATA_DIR=.\data
 set OUTPUT_DIR=.\output

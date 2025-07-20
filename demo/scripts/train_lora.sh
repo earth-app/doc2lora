@@ -7,6 +7,9 @@ set -e
 echo "🚀 Starting LoRA Training with Demo Data"
 echo "========================================"
 
+# Check GPU availability
+python3 -c "import torch; print('🚀 GPU Available:' if torch.cuda.is_available() else '💻 Using CPU'); print(f'Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"CPU\"}')" 2>/dev/null || echo "💻 PyTorch not installed yet"
+
 # Configuration (relative to demo directory)
 DATA_DIR="./data"
 OUTPUT_DIR="./output"

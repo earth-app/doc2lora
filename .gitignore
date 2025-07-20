@@ -151,6 +151,7 @@ Thumbs.db
 # LoRA training outputs
 lora_training_output/
 examples/output/
+demo/output/
 !examples/example_documents/*.json
 
 # Model files

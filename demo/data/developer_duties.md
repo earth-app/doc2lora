@@ -5,6 +5,7 @@
 As a software developer, my primary responsibilities include:
 
 ### Code Development
+
 - Writing clean, maintainable, and efficient code
 - Following established coding standards and best practices
 - Implementing new features based on product requirements
@@ -12,6 +13,7 @@ As a software developer, my primary responsibilities include:
 - Conducting code reviews for team members
 
 ### Project Management
+
 - Participating in daily standup meetings
 - Breaking down complex tasks into manageable components
 - Estimating effort and time for development tasks
@@ -19,6 +21,7 @@ As a software developer, my primary responsibilities include:
 - Updating project management tools with progress
 
 ### Technical Documentation
+
 - Writing technical specifications for new features
 - Maintaining API documentation
 - Creating and updating README files
@@ -28,6 +31,7 @@ As a software developer, my primary responsibilities include:
 ## Weekly Responsibilities
 
 ### Team Collaboration
+
 - Participating in sprint planning meetings
 - Conducting retrospectives to improve team processes
 - Mentoring junior developers
@@ -35,6 +39,7 @@ As a software developer, my primary responsibilities include:
 - Architecture discussions for new projects
 
 ### Quality Assurance
+
 - Writing unit tests for new code
 - Performing integration testing
 - Reviewing QA test cases
@@ -44,6 +49,7 @@ As a software developer, my primary responsibilities include:
 ## Monthly Goals
 
 ### Professional Development
+
 - Learning new technologies and frameworks
 - Attending tech conferences or webinars
 - Contributing to open-source projects
@@ -51,6 +57,7 @@ As a software developer, my primary responsibilities include:
 - Completing online courses relevant to the role
 
 ### System Maintenance
+
 - Updating dependencies and libraries
 - Performance optimization reviews
 - Database maintenance and optimization

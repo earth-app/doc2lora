@@ -43,11 +43,22 @@ def cli():
 )
 @click.option("--batch-size", default=4, help="Training batch size")
 @click.option("--epochs", default=3, help="Number of training epochs")
-@click.option("--max-steps", default=None, type=int, help="Maximum number of training steps (overrides epochs if set)")
+@click.option(
+    "--max-steps",
+    default=None,
+    type=int,
+    help="Maximum number of training steps (overrides epochs if set)",
+)
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
 @click.option("--lora-r", default=16, help="LoRA rank parameter")
 @click.option("--lora-alpha", default=32, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
+@click.option(
+    "--device",
+    default=None,
+    type=click.Choice(["cuda", "mps", "cpu", "auto"], case_sensitive=False),
+    help="Device to use for training (auto-detects by default)",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def convert_cmd(
     documents_path: str,
@@ -61,6 +72,7 @@ def convert_cmd(
     lora_r: int,
     lora_alpha: int,
     lora_dropout: float,
+    device: Optional[str],
     verbose: bool,
 ):
     """Convert a folder of documents to LoRA adapter format."""
@@ -83,6 +95,7 @@ def convert_cmd(
             lora_r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
+            device=None if device == "auto" else device,
         )
 
         click.echo(f"✅ LoRA adapter successfully created at: {adapter_path}")
@@ -158,11 +171,22 @@ def formats():
 )
 @click.option("--batch-size", default=4, help="Training batch size")
 @click.option("--epochs", default=3, help="Number of training epochs")
-@click.option("--max-steps", default=None, type=int, help="Maximum number of training steps (overrides epochs if set)")
+@click.option(
+    "--max-steps",
+    default=None,
+    type=int,
+    help="Maximum number of training steps (overrides epochs if set)",
+)
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
 @click.option("--lora-r", default=16, help="LoRA rank parameter")
 @click.option("--lora-alpha", default=32, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
+@click.option(
+    "--device",
+    default=None,
+    type=click.Choice(["cuda", "mps", "cpu", "auto"], case_sensitive=False),
+    help="Device to use for training (auto-detects by default)",
+)
 @click.option(
     "--aws-access-key-id",
     envvar="AWS_ACCESS_KEY_ID",
@@ -201,6 +225,7 @@ def convert_r2(
     lora_r: int,
     lora_alpha: int,
     lora_dropout: float,
+    device: Optional[str],
     aws_access_key_id: str,
     aws_secret_access_key: str,
     endpoint_url: str,
@@ -273,6 +298,7 @@ def convert_r2(
             lora_r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
+            device=None if device == "auto" else device,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             endpoint_url=endpoint_url,

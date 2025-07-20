@@ -4,7 +4,7 @@ This demo showcases how to use **doc2lora** to create a custom LoRA adapter from
 
 ## 📁 Demo Structure
 
-```
+```txt
 demo/
 ├── data/                           # Training documents
 │   ├── developer_duties.md         # Daily/weekly/monthly developer responsibilities
@@ -214,11 +214,11 @@ You can modify the scripts to use different Cloudflare AI models:
 3. **"You are trying to access a gated repo" (HuggingFace 401 error)**
    - **Set your HuggingFace API key**: `set HF_API_KEY=your_token_here` (Windows) or `export HF_API_KEY=your_token_here` (Linux/Mac)
    - **Login to HuggingFace**: `huggingface-cli login`
-   - **Request access** to the Mistral model at: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
+   - **Request access** to the Mistral model at: [](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)
    - **Alternative**: Use a non-gated model like `microsoft/DialoGPT-medium`
 
 4. **"wrangler not found"**
-   - Install Node.js from: https://nodejs.org/
+   - Install Node.js from: [](https://nodejs.org/)
    - Install Wrangler: `npm install -g wrangler`
 
 5. **"CLOUDFLARE_ACCOUNT_ID not set"**
@@ -229,9 +229,14 @@ You can modify the scripts to use different Cloudflare AI models:
    - Run `.\scripts\train_lora.bat` first from the demo directory
 
 7. **Memory errors during training**
-   - Reduce `--batch-size` to 1
-   - Use a smaller model
-   - Ensure you have enough RAM/VRAM
+   - GPU memory: Reduce `--batch-size` to 1, or force CPU with `--device cpu`
+   - System RAM: Use a smaller model or reduce sequence length
+   - The system automatically uses fp16 precision on GPU to save memory
+
+8. **Slow training performance**
+   - Training automatically uses GPU when available (NVIDIA CUDA or Apple MPS)
+   - Check GPU detection in training script output
+   - For CPU-only systems, training will be slower but still functional
 
 ### Getting Help
 
@@ -241,10 +246,11 @@ You can modify the scripts to use different Cloudflare AI models:
 
 ## 📈 Performance Tips
 
-1. **For faster training**: Set `HF_API_KEY` environment variable
+1. **For faster training**: GPU is automatically used when available (NVIDIA CUDA or Apple Silicon MPS)
 2. **For production use**: Increase epochs and use more training data
 3. **For memory efficiency**: Reduce batch size and LoRA parameters
 4. **For better responses**: Tune temperature and max_tokens in the Worker
+5. **Force CPU usage**: Add `--device cpu` to training script if needed for debugging
 
 ## 🎯 Next Steps
 
