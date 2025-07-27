@@ -24,21 +24,39 @@ def create_demo_structure():
     # Create subdirectories representing different document categories
     categories = {
         "legal": [
-            ("contract.txt", "This is a legal contract document with terms and conditions."),
-            ("agreement.md", "# Legal Agreement\n\nThis document outlines the legal agreement between parties."),
+            (
+                "contract.txt",
+                "This is a legal contract document with terms and conditions.",
+            ),
+            (
+                "agreement.md",
+                "# Legal Agreement\n\nThis document outlines the legal agreement between parties.",
+            ),
         ],
         "technical": [
-            ("api_spec.md", "# API Specification\n\n## Endpoints\n\n- GET /users\n- POST /users"),
+            (
+                "api_spec.md",
+                "# API Specification\n\n## Endpoints\n\n- GET /users\n- POST /users",
+            ),
             ("readme.txt", "Technical documentation for the software project."),
         ],
         "marketing": [
             ("campaign.txt", "Marketing campaign strategy for Q4 2025."),
-            ("brochure.md", "# Product Brochure\n\nOur amazing product features include..."),
+            (
+                "brochure.md",
+                "# Product Brochure\n\nOur amazing product features include...",
+            ),
         ],
         "support": [
-            ("faq.txt", "Frequently Asked Questions\n\nQ: How do I install?\nA: Run pip install..."),
-            ("troubleshooting.md", "# Troubleshooting Guide\n\n## Common Issues\n\n1. Installation problems"),
-        ]
+            (
+                "faq.txt",
+                "Frequently Asked Questions\n\nQ: How do I install?\nA: Run pip install...",
+            ),
+            (
+                "troubleshooting.md",
+                "# Troubleshooting Guide\n\n## Common Issues\n\n1. Installation problems",
+            ),
+        ],
     }
 
     # Create files in subdirectories
@@ -53,7 +71,10 @@ def create_demo_structure():
 
     # Create a root-level file
     root_file = base_path / "overview.txt"
-    root_file.write_text("This is a root-level document providing an overview of all categories.", encoding="utf-8")
+    root_file.write_text(
+        "This is a root-level document providing an overview of all categories.",
+        encoding="utf-8",
+    )
     print(f"  Created: overview.txt (root level)")
 
     return base_path
@@ -108,7 +129,7 @@ def demonstrate_labeling():
             "category_path": example_doc["category_path"],
             "content": example_doc["content"][:100] + "...",
             "extension": example_doc["extension"],
-            "size": example_doc["size"]
+            "size": example_doc["size"],
         }
 
         print(json.dumps(example_json, indent=2))
@@ -125,6 +146,7 @@ def demonstrate_labeling():
     finally:
         # Clean up
         import shutil
+
         shutil.rmtree(demo_path)
         print(f"\nCleaned up demo directory: {demo_path}")
 

@@ -1,10 +1,10 @@
 """Tests for doc2lora parsers."""
 
 import json
+import tarfile
 import tempfile
 import unittest
 import zipfile
-import tarfile
 from pathlib import Path
 
 from doc2lora.parsers import DocumentParser
@@ -146,9 +146,11 @@ class TestDocumentParser(unittest.TestCase):
         # Create a ZIP file with test documents
         zip_file = self.temp_path / "test_archive.zip"
 
-        with zipfile.ZipFile(zip_file, 'w') as zip_ref:
+        with zipfile.ZipFile(zip_file, "w") as zip_ref:
             # Add a markdown file
-            zip_ref.writestr("docs/readme.md", "# Test Documentation\n\nThis is a test.")
+            zip_ref.writestr(
+                "docs/readme.md", "# Test Documentation\n\nThis is a test."
+            )
             # Add a text file
             zip_ref.writestr("notes.txt", "Important notes here.")
             # Add a JSON file
@@ -173,7 +175,7 @@ class TestDocumentParser(unittest.TestCase):
         # Create a TAR file with test documents
         tar_file = self.temp_path / "test_archive.tar"
 
-        with tarfile.open(tar_file, 'w') as tar_ref:
+        with tarfile.open(tar_file, "w") as tar_ref:
             # Create temporary files to add to the archive
             md_content = "# TAR Test\n\nThis is from a TAR file."
             txt_content = "Text file in TAR archive."
@@ -202,7 +204,7 @@ class TestDocumentParser(unittest.TestCase):
         # Create a TAR.GZ file with test documents
         tar_file = self.temp_path / "test_archive.tar.gz"
 
-        with tarfile.open(tar_file, 'w:gz') as tar_ref:
+        with tarfile.open(tar_file, "w:gz") as tar_ref:
             csv_content = "name,value\ntest,123\nexample,456"
 
             csv_info = tarfile.TarInfo(name="data.csv")
@@ -221,7 +223,7 @@ class TestDocumentParser(unittest.TestCase):
         """Test parsing empty ZIP archives."""
         zip_file = self.temp_path / "empty.zip"
 
-        with zipfile.ZipFile(zip_file, 'w') as zip_ref:
+        with zipfile.ZipFile(zip_file, "w") as zip_ref:
             pass  # Create empty ZIP
 
         result = self.parser.parse_file(zip_file)
@@ -234,7 +236,7 @@ class TestDocumentParser(unittest.TestCase):
         """Test ZIP archives with nested directory structures."""
         zip_file = self.temp_path / "nested.zip"
 
-        with zipfile.ZipFile(zip_file, 'w') as zip_ref:
+        with zipfile.ZipFile(zip_file, "w") as zip_ref:
             zip_ref.writestr("project/docs/api.md", "# API Documentation")
             zip_ref.writestr("project/src/config.json", '{"debug": true}')
             zip_ref.writestr("project/README.txt", "Project readme file")
@@ -250,7 +252,8 @@ class TestDocumentParser(unittest.TestCase):
     def _string_to_fileobj(self, content: str):
         """Helper method to convert string to file-like object for tarfile."""
         import io
-        return io.BytesIO(content.encode('utf-8'))
+
+        return io.BytesIO(content.encode("utf-8"))
 
     def test_parse_html(self):
         """Test parsing HTML files."""
@@ -310,15 +313,15 @@ class TestDocumentParser(unittest.TestCase):
             ws.title = "Test Sheet"
 
             # Add some test data
-            ws['A1'] = "Name"
-            ws['B1'] = "Age"
-            ws['C1'] = "Department"
-            ws['A2'] = "John Doe"
-            ws['B2'] = 30
-            ws['C2'] = "Engineering"
-            ws['A3'] = "Jane Smith"
-            ws['B3'] = 25
-            ws['C3'] = "Marketing"
+            ws["A1"] = "Name"
+            ws["B1"] = "Age"
+            ws["C1"] = "Department"
+            ws["A2"] = "John Doe"
+            ws["B2"] = 30
+            ws["C2"] = "Engineering"
+            ws["A3"] = "Jane Smith"
+            ws["B3"] = 25
+            ws["C3"] = "Marketing"
 
             xlsx_file = self.temp_path / "test.xlsx"
             wb.save(xlsx_file)

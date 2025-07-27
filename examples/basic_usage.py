@@ -54,7 +54,9 @@ def demo_document_parsing():
             try:
                 # Read the file content based on extension
                 # Handle compound extensions for tar files
-                if file_path.name.lower().endswith(('.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.tbz2', '.txz')):
+                if file_path.name.lower().endswith(
+                    (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz")
+                ):
                     content = f"[Archive file: {file_path.name} - would be extracted and parsed by doc2lora]"
                 elif file_path.suffix.lower() in {
                     ".txt",

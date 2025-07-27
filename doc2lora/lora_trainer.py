@@ -354,7 +354,9 @@ class LoRATrainer:
                 with open(config_path, "w") as f:
                     json.dump(config, f, indent=2)
 
-                logger.info(f"✅ Updated adapter_config.json with model_type: {config['model_type']}")
+                logger.info(
+                    f"✅ Updated adapter_config.json with model_type: {config['model_type']}"
+                )
 
             # Create a JSON file with metadata
             metadata = {
@@ -374,9 +376,13 @@ class LoRATrainer:
             with open(output_path, "w") as f:
                 json.dump(metadata, f, indent=2)
 
-            logger.info(f"🚀 LoRA adapter saved for Cloudflare Workers AI compatibility")
+            logger.info(
+                f"🚀 LoRA adapter saved for Cloudflare Workers AI compatibility"
+            )
             logger.info(f"📁 Adapter directory: {adapter_dir}")
-            logger.info(f"📄 Required files: adapter_config.json, adapter_model.safetensors")
+            logger.info(
+                f"📄 Required files: adapter_config.json, adapter_model.safetensors"
+            )
 
             return str(output_path)
         else:
@@ -395,8 +401,12 @@ class LoRATrainer:
                 with open(config_path, "w") as f:
                     json.dump(config, f, indent=2)
 
-                logger.info(f"✅ Updated adapter_config.json with model_type: {config['model_type']}")
-                logger.info(f"🚀 LoRA adapter saved for Cloudflare Workers AI compatibility")
+                logger.info(
+                    f"✅ Updated adapter_config.json with model_type: {config['model_type']}"
+                )
+                logger.info(
+                    f"🚀 LoRA adapter saved for Cloudflare Workers AI compatibility"
+                )
 
             return str(output_path)
 
@@ -439,7 +449,9 @@ class LoRATrainer:
             return "llama"
         else:
             # Default to mistral as it's the most common
-            logger.warning(f"Unknown model type for {self.model_name}, defaulting to 'mistral'")
+            logger.warning(
+                f"Unknown model type for {self.model_name}, defaulting to 'mistral'"
+            )
             return "mistral"
 
     def _find_target_modules(self):

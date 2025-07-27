@@ -50,7 +50,9 @@ def main():
     BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "my-documents-bucket")
     FOLDER_PREFIX = os.getenv("R2_FOLDER_PREFIX", "training-docs")  # Optional
     R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
-    R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+    R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv(
+        "AWS_SECRET_ACCESS_KEY"
+    )
     R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL")
 
     # Check if credentials are provided
@@ -95,7 +97,7 @@ def main():
     try:
         print("🔄 Converting documents from R2 bucket...")
 
-                # Method 1: Convert documents from R2 bucket using explicit credentials
+        # Method 1: Convert documents from R2 bucket using explicit credentials
         adapter_path = convert_from_r2(
             bucket_name=BUCKET_NAME,
             folder_prefix=FOLDER_PREFIX,

@@ -135,7 +135,9 @@ class DocumentParser:
 
         return documents
 
-    def parse_file(self, file_path: Path, base_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    def parse_file(
+        self, file_path: Path, base_path: Optional[Path] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Parse a single file based on its extension.
 
@@ -149,13 +151,19 @@ class DocumentParser:
         extension = file_path.suffix.lower()
 
         # Handle compound extensions for tar files
-        if file_path.name.lower().endswith(('.tar.gz', '.tar.bz2', '.tar.xz')):
-            if file_path.name.lower().endswith('.tar.gz') or file_path.name.lower().endswith('.tgz'):
-                extension = '.tar.gz'
-            elif file_path.name.lower().endswith('.tar.bz2') or file_path.name.lower().endswith('.tbz2'):
-                extension = '.tar.bz2'
-            elif file_path.name.lower().endswith('.tar.xz') or file_path.name.lower().endswith('.txz'):
-                extension = '.tar.xz'
+        if file_path.name.lower().endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
+            if file_path.name.lower().endswith(
+                ".tar.gz"
+            ) or file_path.name.lower().endswith(".tgz"):
+                extension = ".tar.gz"
+            elif file_path.name.lower().endswith(
+                ".tar.bz2"
+            ) or file_path.name.lower().endswith(".tbz2"):
+                extension = ".tar.bz2"
+            elif file_path.name.lower().endswith(
+                ".tar.xz"
+            ) or file_path.name.lower().endswith(".txz"):
+                extension = ".tar.xz"
 
         try:
             if extension == ".md":
@@ -196,7 +204,10 @@ class DocumentParser:
                     try:
                         relative_path = file_path.relative_to(base_path)
                         # Combine parent directory and filename
-                        if relative_path.parent.name and relative_path.parent.name != ".":
+                        if (
+                            relative_path.parent.name
+                            and relative_path.parent.name != "."
+                        ):
                             dir_name = relative_path.parent.name
                             label = f"{dir_name}_{filename_stem}"
                             category_path = str(relative_path.parent).replace("\\", "/")
@@ -205,11 +216,17 @@ class DocumentParser:
                             category_path = ""
                     except ValueError:
                         # file_path is not relative to base_path
-                        dir_name = file_path.parent.name if file_path.parent.name else "unknown"
+                        dir_name = (
+                            file_path.parent.name
+                            if file_path.parent.name
+                            else "unknown"
+                        )
                         label = f"{dir_name}_{filename_stem}"
                         category_path = ""
                 else:
-                    dir_name = file_path.parent.name if file_path.parent.name else "unknown"
+                    dir_name = (
+                        file_path.parent.name if file_path.parent.name else "unknown"
+                    )
                     label = f"{dir_name}_{filename_stem}"
                     category_path = ""
 
@@ -344,7 +361,7 @@ class DocumentParser:
         content_parts = []
 
         try:
-            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            with zipfile.ZipFile(file_path, "r") as zip_ref:
                 # Get list of files in the archive
                 file_list = zip_ref.namelist()
                 content_parts.append(f"=== ZIP Archive: {file_path.name} ===")
@@ -356,7 +373,7 @@ class DocumentParser:
 
                     for file_info in zip_ref.infolist():
                         # Skip directories and hidden files
-                        if file_info.is_dir() or file_info.filename.startswith('.'):
+                        if file_info.is_dir() or file_info.filename.startswith("."):
                             continue
 
                         file_name = Path(file_info.filename)
@@ -370,16 +387,26 @@ class DocumentParser:
                                 extracted_file = Path(extracted_path)
 
                                 # Parse the extracted file
-                                parsed_doc = self._parse_extracted_file(extracted_file, file_info.filename)
+                                parsed_doc = self._parse_extracted_file(
+                                    extracted_file, file_info.filename
+                                )
                                 if parsed_doc:
-                                    content_parts.append(f"\n--- File: {file_info.filename} ---")
+                                    content_parts.append(
+                                        f"\n--- File: {file_info.filename} ---"
+                                    )
                                     content_parts.append(parsed_doc)
 
                             except Exception as e:
-                                logger.warning(f"Could not parse {file_info.filename} from ZIP: {e}")
-                                content_parts.append(f"\n--- File: {file_info.filename} (parsing failed) ---")
+                                logger.warning(
+                                    f"Could not parse {file_info.filename} from ZIP: {e}"
+                                )
+                                content_parts.append(
+                                    f"\n--- File: {file_info.filename} (parsing failed) ---"
+                                )
                         else:
-                            content_parts.append(f"  • {file_info.filename} (unsupported format)")
+                            content_parts.append(
+                                f"  • {file_info.filename} (unsupported format)"
+                            )
 
         except Exception as e:
             logger.error(f"Error reading ZIP file {file_path}: {e}")
@@ -393,14 +420,14 @@ class DocumentParser:
 
         try:
             # Determine the compression mode
-            if file_path.name.lower().endswith(('.tar.gz', '.tgz')):
-                mode = 'r:gz'
-            elif file_path.name.lower().endswith(('.tar.bz2', '.tbz2')):
-                mode = 'r:bz2'
-            elif file_path.name.lower().endswith(('.tar.xz', '.txz')):
-                mode = 'r:xz'
+            if file_path.name.lower().endswith((".tar.gz", ".tgz")):
+                mode = "r:gz"
+            elif file_path.name.lower().endswith((".tar.bz2", ".tbz2")):
+                mode = "r:bz2"
+            elif file_path.name.lower().endswith((".tar.xz", ".txz")):
+                mode = "r:xz"
             else:
-                mode = 'r'
+                mode = "r"
 
             with tarfile.open(file_path, mode) as tar_ref:
                 # Get list of files in the archive
@@ -416,7 +443,7 @@ class DocumentParser:
 
                     for member in file_members:
                         # Skip hidden files
-                        if Path(member.name).name.startswith('.'):
+                        if Path(member.name).name.startswith("."):
                             continue
 
                         file_name = Path(member.name)
@@ -430,16 +457,26 @@ class DocumentParser:
                                 extracted_file = temp_path / member.name
 
                                 # Parse the extracted file
-                                parsed_doc = self._parse_extracted_file(extracted_file, member.name)
+                                parsed_doc = self._parse_extracted_file(
+                                    extracted_file, member.name
+                                )
                                 if parsed_doc:
-                                    content_parts.append(f"\n--- File: {member.name} ---")
+                                    content_parts.append(
+                                        f"\n--- File: {member.name} ---"
+                                    )
                                     content_parts.append(parsed_doc)
 
                             except Exception as e:
-                                logger.warning(f"Could not parse {member.name} from TAR: {e}")
-                                content_parts.append(f"\n--- File: {member.name} (parsing failed) ---")
+                                logger.warning(
+                                    f"Could not parse {member.name} from TAR: {e}"
+                                )
+                                content_parts.append(
+                                    f"\n--- File: {member.name} (parsing failed) ---"
+                                )
                         else:
-                            content_parts.append(f"  • {member.name} (unsupported format)")
+                            content_parts.append(
+                                f"  • {member.name} (unsupported format)"
+                            )
 
         except Exception as e:
             logger.error(f"Error reading TAR file {file_path}: {e}")
@@ -447,7 +484,9 @@ class DocumentParser:
 
         return "\n".join(content_parts)
 
-    def _parse_extracted_file(self, file_path: Path, original_name: str) -> Optional[str]:
+    def _parse_extracted_file(
+        self, file_path: Path, original_name: str
+    ) -> Optional[str]:
         """Parse an extracted file from an archive."""
         extension = file_path.suffix.lower()
 

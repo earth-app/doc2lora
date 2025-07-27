@@ -201,29 +201,39 @@ def download_from_r2_bucket(
 
     # Get credentials from environment variables if not provided directly
     if not aws_access_key_id:
-        aws_access_key_id = os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
+        aws_access_key_id = os.getenv("R2_ACCESS_KEY_ID") or os.getenv(
+            "AWS_ACCESS_KEY_ID"
+        )
     if not aws_secret_access_key:
-        aws_secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+        aws_secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv(
+            "AWS_SECRET_ACCESS_KEY"
+        )
     if not endpoint_url:
         endpoint_url = os.getenv("R2_ENDPOINT_URL")
 
     # Validate and clean the endpoint URL
     if endpoint_url:
         # Remove trailing slash
-        endpoint_url = endpoint_url.rstrip('/')
+        endpoint_url = endpoint_url.rstrip("/")
 
         # Check if endpoint URL accidentally includes bucket name
-        if f'/{bucket_name}' in endpoint_url:
-            logger.warning(f"⚠️  Endpoint URL contains bucket name '{bucket_name}'. Removing it...")
-            endpoint_url = endpoint_url.replace(f'/{bucket_name}', '')
+        if f"/{bucket_name}" in endpoint_url:
+            logger.warning(
+                f"⚠️  Endpoint URL contains bucket name '{bucket_name}'. Removing it..."
+            )
+            endpoint_url = endpoint_url.replace(f"/{bucket_name}", "")
             logger.info(f"📝 Corrected endpoint URL: {endpoint_url}")
 
         # Validate endpoint format
-        if not endpoint_url.startswith('https://'):
-            raise ValueError(f"R2 endpoint URL must start with https://. Got: {endpoint_url}")
+        if not endpoint_url.startswith("https://"):
+            raise ValueError(
+                f"R2 endpoint URL must start with https://. Got: {endpoint_url}"
+            )
 
-        if '.r2.cloudflarestorage.com' not in endpoint_url:
-            logger.warning("⚠️  Endpoint URL doesn't appear to be a Cloudflare R2 endpoint")
+        if ".r2.cloudflarestorage.com" not in endpoint_url:
+            logger.warning(
+                "⚠️  Endpoint URL doesn't appear to be a Cloudflare R2 endpoint"
+            )
 
     if boto3 is None:
         raise ImportError(
@@ -254,9 +264,13 @@ def download_from_r2_bucket(
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             if error_code == "404":
-                raise ValueError(f"Bucket '{bucket_name}' does not exist or is not accessible")
+                raise ValueError(
+                    f"Bucket '{bucket_name}' does not exist or is not accessible"
+                )
             elif error_code == "403":
-                raise ValueError(f"Access denied to bucket '{bucket_name}'. Check your credentials and permissions")
+                raise ValueError(
+                    f"Access denied to bucket '{bucket_name}'. Check your credentials and permissions"
+                )
             else:
                 raise ValueError(f"Error connecting to bucket '{bucket_name}': {e}")
 
@@ -266,7 +280,9 @@ def download_from_r2_bucket(
         elif "SignatureDoesNotMatch" in str(e):
             raise ValueError("Invalid R2 secret access key. Check your credentials.")
         elif "endpoint" in str(e).lower():
-            raise ValueError(f"Invalid R2 endpoint URL: {endpoint_url}. Should be format: https://your-account-id.r2.cloudflarestorage.com")
+            raise ValueError(
+                f"Invalid R2 endpoint URL: {endpoint_url}. Should be format: https://your-account-id.r2.cloudflarestorage.com"
+            )
         else:
             raise ValueError(f"Failed to connect to R2: {e}")
 
@@ -325,13 +341,17 @@ def download_from_r2_bucket(
             if error_code == "NoSuchBucket":
                 raise ValueError(f"Bucket '{bucket_name}' does not exist")
             elif error_code == "AccessDenied":
-                raise ValueError("Access denied. Check your credentials and permissions")
+                raise ValueError(
+                    "Access denied. Check your credentials and permissions"
+                )
             else:
                 raise ValueError(f"Error listing objects in bucket: {e}")
 
         if downloaded_count == 0:
             if folder_prefix:
-                raise ValueError(f"No files found in bucket '{bucket_name}' with prefix '{folder_prefix}'")
+                raise ValueError(
+                    f"No files found in bucket '{bucket_name}' with prefix '{folder_prefix}'"
+                )
             else:
                 raise ValueError(f"No files found in bucket '{bucket_name}'")
         else:
@@ -348,7 +368,9 @@ def download_from_r2_bucket(
         if error_code == "NoSuchBucket":
             raise ValueError(f"Bucket '{bucket_name}' does not exist")
         elif error_code == "NoSuchKey":
-            raise ValueError(f"No files found in bucket '{bucket_name}'{f' with prefix {folder_prefix}' if folder_prefix else ''}")
+            raise ValueError(
+                f"No files found in bucket '{bucket_name}'{f' with prefix {folder_prefix}' if folder_prefix else ''}"
+            )
         elif error_code == "AccessDenied":
             raise ValueError("Access denied. Check your credentials and permissions")
         else:
@@ -356,7 +378,9 @@ def download_from_r2_bucket(
     except Exception as e:
         # Handle other types of errors, including parsing issues
         if "'str' object has no attribute 'get'" in str(e):
-            raise ValueError(f"Invalid R2 bucket configuration. Check your endpoint URL and bucket name.")
+            raise ValueError(
+                f"Invalid R2 bucket configuration. Check your endpoint URL and bucket name."
+            )
         else:
             raise ValueError(f"Unexpected error accessing R2 bucket: {e}")
 

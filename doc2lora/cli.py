@@ -50,7 +50,9 @@ def cli():
     help="Maximum number of training steps (overrides epochs if set)",
 )
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
-@click.option("--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)")
+@click.option(
+    "--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)"
+)
 @click.option("--lora-alpha", default=16, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
 @click.option(
@@ -186,7 +188,9 @@ def formats():
     help="Maximum number of training steps (overrides epochs if set)",
 )
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
-@click.option("--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)")
+@click.option(
+    "--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)"
+)
 @click.option("--lora-alpha", default=16, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
 @click.option(
@@ -259,9 +263,13 @@ def convert_r2(
     # If credentials not provided directly, try to get from environment
     # (which may have been loaded from .env file)
     if not r2_access_key_id:
-        r2_access_key_id = os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
+        r2_access_key_id = os.getenv("R2_ACCESS_KEY_ID") or os.getenv(
+            "AWS_ACCESS_KEY_ID"
+        )
     if not r2_secret_access_key:
-        r2_secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+        r2_secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv(
+            "AWS_SECRET_ACCESS_KEY"
+        )
     if not endpoint_url:
         endpoint_url = os.getenv("R2_ENDPOINT_URL")
 
@@ -322,20 +330,35 @@ def convert_r2(
             click.echo(f"❌ Error: {e}", err=True)
             click.echo("\n💡 Troubleshooting tips:", err=True)
             click.echo("  • Check that your bucket contains files", err=True)
-            click.echo("  • Verify the folder prefix (if specified) is correct", err=True)
-            click.echo("  • Ensure files are in supported formats (.md, .txt, .pdf, etc.)", err=True)
+            click.echo(
+                "  • Verify the folder prefix (if specified) is correct", err=True
+            )
+            click.echo(
+                "  • Ensure files are in supported formats (.md, .txt, .pdf, etc.)",
+                err=True,
+            )
         elif "Bucket" in str(e) and "does not exist" in str(e):
             click.echo(f"❌ Error: {e}", err=True)
             click.echo("\n💡 Troubleshooting tips:", err=True)
             click.echo("  • Check the bucket name is correct", err=True)
             click.echo("  • Verify the bucket exists in your R2 account", err=True)
-            click.echo("  • Ensure your credentials have access to this bucket", err=True)
+            click.echo(
+                "  • Ensure your credentials have access to this bucket", err=True
+            )
         elif "endpoint" in str(e).lower():
             click.echo(f"❌ Error: {e}", err=True)
             click.echo("\n💡 Troubleshooting tips:", err=True)
-            click.echo("  • R2 endpoint format: https://your-account-id.r2.cloudflarestorage.com", err=True)
-            click.echo("  • Do NOT include the bucket name in the endpoint URL", err=True)
-            click.echo("  • Get your endpoint from Cloudflare dashboard > R2 > Manage R2 API tokens", err=True)
+            click.echo(
+                "  • R2 endpoint format: https://your-account-id.r2.cloudflarestorage.com",
+                err=True,
+            )
+            click.echo(
+                "  • Do NOT include the bucket name in the endpoint URL", err=True
+            )
+            click.echo(
+                "  • Get your endpoint from Cloudflare dashboard > R2 > Manage R2 API tokens",
+                err=True,
+            )
         else:
             click.echo(f"❌ Error: {e}", err=True)
         raise click.Abort()
