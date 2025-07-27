@@ -110,8 +110,8 @@ def demo_llama_training():
             batch_size=1,  # Small batch due to memory requirements
             num_epochs=3,  # Good balance for Llama 2
             learning_rate=2e-4,  # Optimal for Llama 2 fine-tuning
-            lora_r=32,  # Higher rank for Llama 2's complexity
-            lora_alpha=64,  # 2x rank ratio
+            lora_r=8,  # Max 8 for Cloudflare Workers AI compatibility
+            lora_alpha=16,  # 2x rank ratio
             lora_dropout=0.05,  # Low dropout for stable training
         )
 

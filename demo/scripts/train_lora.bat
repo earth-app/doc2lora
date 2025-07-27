@@ -49,8 +49,8 @@ python -m doc2lora.cli convert "%DATA_DIR%" ^
     --epochs 3 ^
     --learning-rate 2e-4 ^
     --batch-size 2 ^
-    --lora-r 16 ^
-    --lora-alpha 32 ^
+    --lora-r 8 ^
+    --lora-alpha 16 ^
     --lora-dropout 0.1 ^
     --verbose
 
@@ -68,5 +68,5 @@ echo ✅ Training completed!
 echo 📦 Adapter saved to: %OUTPUT_DIR%\%ADAPTER_NAME%
 echo.
 echo Next steps:
-echo 1. Run '.\scripts\deploy_to_r2.bat' to upload to R2 bucket
+echo 1. Run '.\scripts\deploy_to_r2.bat' to upload to Cloudflare AI
 echo 2. Run 'wrangler deploy' to deploy the Cloudflare Worker

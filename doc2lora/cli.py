@@ -50,8 +50,8 @@ def cli():
     help="Maximum number of training steps (overrides epochs if set)",
 )
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
-@click.option("--lora-r", default=16, help="LoRA rank parameter")
-@click.option("--lora-alpha", default=32, help="LoRA alpha parameter")
+@click.option("--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)")
+@click.option("--lora-alpha", default=16, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
 @click.option(
     "--device",
@@ -141,10 +141,18 @@ def formats():
         (".yaml/.yml", "YAML files"),
         (".xml", "XML files"),
         (".tex", "LaTeX files"),
+        (".zip", "ZIP archives containing supported documents"),
+        (".tar", "TAR archives containing supported documents"),
+        (".tar.gz/.tgz", "Gzip-compressed TAR archives"),
+        (".tar.bz2/.tbz2", "Bzip2-compressed TAR archives"),
+        (".tar.xz/.txz", "XZ-compressed TAR archives"),
     ]
 
     for ext, description in formats_info:
-        click.echo(f"  {ext:<12} {description}")
+        click.echo(f"  {ext:<15} {description}")
+
+    click.echo("\nNote: Archive formats (.zip, .tar, etc.) will extract and parse")
+    click.echo("      any supported document files they contain.")
 
 
 @cli.command()
@@ -178,8 +186,8 @@ def formats():
     help="Maximum number of training steps (overrides epochs if set)",
 )
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
-@click.option("--lora-r", default=16, help="LoRA rank parameter")
-@click.option("--lora-alpha", default=32, help="LoRA alpha parameter")
+@click.option("--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)")
+@click.option("--lora-alpha", default=16, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
 @click.option(
     "--device",
@@ -188,14 +196,14 @@ def formats():
     help="Device to use for training (auto-detects by default)",
 )
 @click.option(
-    "--aws-access-key-id",
-    envvar="AWS_ACCESS_KEY_ID",
-    help="AWS access key ID for R2 (can also be set via AWS_ACCESS_KEY_ID env var)",
+    "--r2-access-key-id",
+    envvar="R2_ACCESS_KEY_ID",
+    help="R2 access key ID (can also be set via R2_ACCESS_KEY_ID env var)",
 )
 @click.option(
-    "--aws-secret-access-key",
-    envvar="AWS_SECRET_ACCESS_KEY",
-    help="AWS secret access key for R2 (can also be set via AWS_SECRET_ACCESS_KEY env var)",
+    "--r2-secret-access-key",
+    envvar="R2_SECRET_ACCESS_KEY",
+    help="R2 secret access key (can also be set via R2_SECRET_ACCESS_KEY env var)",
 )
 @click.option(
     "--endpoint-url",
@@ -226,8 +234,8 @@ def convert_r2(
     lora_alpha: int,
     lora_dropout: float,
     device: Optional[str],
-    aws_access_key_id: str,
-    aws_secret_access_key: str,
+    r2_access_key_id: str,
+    r2_secret_access_key: str,
     endpoint_url: str,
     region_name: str,
     env_file: str,
@@ -250,19 +258,20 @@ def convert_r2(
 
     # If credentials not provided directly, try to get from environment
     # (which may have been loaded from .env file)
-    if not aws_access_key_id:
-        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-    if not aws_secret_access_key:
-        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if not r2_access_key_id:
+        r2_access_key_id = os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
+    if not r2_secret_access_key:
+        r2_secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
     if not endpoint_url:
         endpoint_url = os.getenv("R2_ENDPOINT_URL")
 
     # Validate required credentials
-    if not aws_access_key_id or not aws_secret_access_key:
+    if not r2_access_key_id or not r2_secret_access_key:
         click.echo(
-            "❌ Error: AWS credentials are required. Provide them via:\n"
-            "  --aws-access-key-id and --aws-secret-access-key options, or\n"
-            "  AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables, or\n"
+            "❌ Error: R2 credentials are required. Provide them via:\n"
+            "  --r2-access-key-id and --r2-secret-access-key options, or\n"
+            "  R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY environment variables, or\n"
+            "  AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables (legacy), or\n"
             "  --env-file option pointing to a .env file",
             err=True,
         )
@@ -299,8 +308,8 @@ def convert_r2(
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             device=None if device == "auto" else device,
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
+            aws_access_key_id=r2_access_key_id,
+            aws_secret_access_key=r2_secret_access_key,
             endpoint_url=endpoint_url,
             region_name=region_name,
             env_file=env_file,
@@ -309,7 +318,26 @@ def convert_r2(
         click.echo(f"✅ LoRA adapter successfully created at: {adapter_path}")
 
     except Exception as e:
-        click.echo(f"❌ Error: {e}", err=True)
+        if "No files found" in str(e):
+            click.echo(f"❌ Error: {e}", err=True)
+            click.echo("\n💡 Troubleshooting tips:", err=True)
+            click.echo("  • Check that your bucket contains files", err=True)
+            click.echo("  • Verify the folder prefix (if specified) is correct", err=True)
+            click.echo("  • Ensure files are in supported formats (.md, .txt, .pdf, etc.)", err=True)
+        elif "Bucket" in str(e) and "does not exist" in str(e):
+            click.echo(f"❌ Error: {e}", err=True)
+            click.echo("\n💡 Troubleshooting tips:", err=True)
+            click.echo("  • Check the bucket name is correct", err=True)
+            click.echo("  • Verify the bucket exists in your R2 account", err=True)
+            click.echo("  • Ensure your credentials have access to this bucket", err=True)
+        elif "endpoint" in str(e).lower():
+            click.echo(f"❌ Error: {e}", err=True)
+            click.echo("\n💡 Troubleshooting tips:", err=True)
+            click.echo("  • R2 endpoint format: https://your-account-id.r2.cloudflarestorage.com", err=True)
+            click.echo("  • Do NOT include the bucket name in the endpoint URL", err=True)
+            click.echo("  • Get your endpoint from Cloudflare dashboard > R2 > Manage R2 API tokens", err=True)
+        else:
+            click.echo(f"❌ Error: {e}", err=True)
         raise click.Abort()
 
 

@@ -1,6 +1,19 @@
-# doc2lora Demo - Software Developer Assistant
+# doc2lora Demo - Software Developer3. **Cloudflare account**: Sign up at [dash.cloudflare.com](https://dash.cloudflare.com)
 
-This demo showcases how to use **doc2lora** to create a custom LoRA adapter from documents and deploy it to Cloudflare Workers AI. The demo creates an AI assistant that can answer questions about software development practices based on training data.
+4. **Wrangler CLI**: Install the Cloudflare CLI
+
+   ```bash
+   npm install -g wrangler
+   ```
+
+5. **Cloudflare Workers AI**: Ensure your account has Workers AI enabled
+
+6. **Environment variables**: Optional, for ML training
+
+   ```bash
+   # Optional but recommended for gated models
+   export HF_API_KEY=your_huggingface_token
+   ```mo showcases how to use **doc2lora** to create a custom LoRA adapter from documents and deploy it to Cloudflare Workers AI. The demo creates an AI assistant that can answer questions about software development practices based on training data.
 
 ## 📁 Demo Structure
 
@@ -13,11 +26,11 @@ demo/
 │   └── tech_stack.yaml            # Technical stack and infrastructure details
 ├── scripts/                        # Automation scripts
 │   ├── train_lora.sh/.bat          # Train LoRA adapter from data
-│   ├── deploy_to_r2.sh/.bat        # Deploy adapter to R2 bucket
+│   ├── deploy_to_r2.sh/.bat        # Deploy adapter to Cloudflare AI finetunes
 │   └── wrangler_deploy.sh/.bat     # Deploy Cloudflare Worker
 ├── output/                         # Generated LoRA adapter (created after running)
 │   ├── software_dev_adapter.json   # Adapter metadata
-│   └── software_dev_adapter/       # Actual adapter weights
+│   └── software_dev_adapter/       # Actual adapter weights (adapter_config.json, adapter_model.safetensors)
 ├── worker.js                       # Cloudflare Worker implementation
 ├── wrangler.toml                   # Wrangler configuration
 ├── index.html                      # Demo web interface
@@ -72,9 +85,9 @@ This script will:
 - 🚀 Run doc2lora on the training documents
 - 📁 Create the adapter in `output/software_dev_adapter`
 
-### Step 2: Deploy to R2 Bucket
+### Step 2: Deploy to Cloudflare AI
 
-Deploy the adapter to Cloudflare R2:
+Deploy the adapter to Cloudflare Workers AI using the finetunes API:
 
 ```bash
 cd demo  # Make sure you're in the demo directory
@@ -86,9 +99,9 @@ cd demo  # Make sure you're in the demo directory
 This script will:
 
 - ✅ Verify the adapter was generated
-- ✅ Check R2 credentials from .env file
-- ☁️ Upload adapter to Cloudflare R2 bucket
-- 🚀 Make adapter available for Workers AI
+- ✅ Check that wrangler CLI is installed and authenticated
+- ☁️ Upload adapter to Cloudflare AI finetunes using `wrangler ai finetune create`
+- 🚀 Make adapter available for Workers AI inference
 
 ### Step 3: Deploy the Worker
 
@@ -171,12 +184,12 @@ Edit `worker.js` to:
 
 ### Training Parameters
 
-Modify `generate_adapter.sh` to adjust:
+Modify `train_lora.sh/.bat` to adjust:
 
 - `--epochs`: Number of training iterations
 - `--batch-size`: Training batch size (reduce if you have memory issues)
 - `--learning-rate`: Learning rate for training
-- `--lora-r` and `--lora-alpha`: LoRA configuration parameters
+- `--lora-r` and `--lora-alpha`: LoRA configuration parameters (r ≤ 8 for Cloudflare Workers AI)
 
 ## 🌐 Using Different Models
 
@@ -220,10 +233,13 @@ You can modify the scripts to use different Cloudflare AI models:
 4. **"wrangler not found"**
    - Install Node.js from: [](https://nodejs.org/)
    - Install Wrangler: `npm install -g wrangler`
+   - Login to Cloudflare: `wrangler login`
 
-5. **"CLOUDFLARE_ACCOUNT_ID not set"**
-   - Set environment variables as shown above
-   - Or use: `wrangler login` to authenticate
+5. **"Failed to create finetune" (Cloudflare API error)**
+   - Run `wrangler login` to authenticate with Cloudflare
+   - Ensure your account has Workers AI enabled
+   - Check that you have permission to create finetunes
+   - Verify your account limits (max 30 LoRA adapters per account)
 
 6. **"Adapter directory not found"**
    - Run `.\scripts\train_lora.bat` first from the demo directory

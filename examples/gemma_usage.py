@@ -111,8 +111,8 @@ def demo_gemma_training():
             batch_size=1,  # Small batch for memory efficiency
             num_epochs=3,  # Good balance for Gemma
             learning_rate=2e-4,  # Optimal for Gemma fine-tuning
-            lora_r=16,  # Good rank for Gemma
-            lora_alpha=32,  # 2x rank ratio
+            lora_r=8,  # Max 8 for Cloudflare Workers AI compatibility
+            lora_alpha=16,  # 2x rank ratio
             lora_dropout=0.05,  # Lower dropout for Gemma
         )
 

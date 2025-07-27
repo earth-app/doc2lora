@@ -130,8 +130,8 @@ def demo_mistral_training():
             batch_size=1,  # Small batch for memory efficiency
             max_length=512,
             learning_rate=1e-4,  # Lower learning rate for Mistral
-            lora_r=16,
-            lora_alpha=32,
+            lora_r=8,  # Max 8 for Cloudflare Workers AI compatibility
+            lora_alpha=16,  # 2x rank ratio
             lora_dropout=0.1,
         )
 

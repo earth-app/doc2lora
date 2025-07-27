@@ -16,6 +16,7 @@ It supports the following formats:
 - **YAML**: `.yaml` files
 - **XML**: `.xml` files
 - **LaTeX**: `.tex` files
+- **Archive Formats**: `.zip`, `.tar.gz`, `tar.xz`, etc with supported documents inside
 
 ## Quick Start
 
@@ -126,8 +127,8 @@ doc2lora convert path/to/documents --output path/to/output.json
 
 ```bash
 # Method 1: Set environment variables for credentials
-export AWS_ACCESS_KEY_ID="your-access-key"
-export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export R2_ACCESS_KEY_ID="your-access-key"
+export R2_SECRET_ACCESS_KEY="your-secret-key"
 export R2_ENDPOINT_URL="https://your-account.r2.cloudflarestorage.com"
 
 # Convert documents from R2 bucket
@@ -141,8 +142,8 @@ doc2lora convert-r2 my-documents-bucket \
 
 # Method 3: Pass credentials directly
 doc2lora convert-r2 my-documents-bucket \
-    --aws-access-key-id "your-access-key" \
-    --aws-secret-access-key "your-secret-key" \
+    --r2-access-key-id "your-access-key" \
+    --r2-secret-access-key "your-secret-key" \
     --endpoint-url "https://your-account.r2.cloudflarestorage.com" \
     --output path/to/output.json
 ```
@@ -310,8 +311,8 @@ doc2lora convert ./docs \
     --batch-size 2 \
     --epochs 3 \
     --learning-rate 2e-4 \
-    --lora-r 16 \
-    --lora-alpha 32 \
+    --lora-r 8 \
+    --lora-alpha 16 \
     --device auto  # or cuda/mps/cpu
 ```
 
@@ -325,7 +326,8 @@ doc2lora convert ./docs \
 ## Features
 
 - ✅ **Document Parsing**: Recursively scan directories for supported document types
-- ✅ **Multiple Formats**: Support for 10+ document formats
+- ✅ **Multiple Formats**: Support for 15+ document formats including archives
+- ✅ **Archive Support**: Extract and parse documents from ZIP and TAR archives
 - ✅ **R2 Bucket Support**: Direct integration with Cloudflare R2 storage buckets
 - ✅ **CLI Interface**: Easy-to-use command-line interface
 - ✅ **Flexible Configuration**: Customizable LoRA parameters

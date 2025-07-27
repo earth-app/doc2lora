@@ -50,7 +50,7 @@ export default {
             content: message
           }
         ],
-        lora: "developer-adapter", // Reference to our uploaded adapter
+        lora: "software_dev_adapter", // Reference to our uploaded adapter
         max_tokens: 512,
         temperature: 0.7
       });
@@ -59,7 +59,7 @@ export default {
         success: true,
         response: response.response,
         model: '@cf/mistralai/mistral-7b-instruct-v0.2-lora',
-        adapter: 'developer-adapter'
+        adapter: 'software_dev_adapter'
       }), {
         headers: {
           'Content-Type': 'application/json',

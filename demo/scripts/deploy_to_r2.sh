@@ -50,25 +50,35 @@ echo "   Bucket: $R2_BUCKET_NAME"
 echo "   Endpoint: $R2_ENDPOINT_URL"
 echo ""
 
-# Upload adapter using doc2lora R2 integration
-echo "🚀 Uploading adapter to R2..."
-python -c "
-import os
-from doc2lora.utils import upload_to_r2
+# Upload adapter using Cloudflare AI finetunes API
+echo "🚀 Uploading adapter to Cloudflare AI..."
 
-adapter_path = '$ADAPTER_PATH'
-bucket_name = os.getenv('R2_BUCKET_NAME')
-adapter_name = '$ADAPTER_NAME'
+# Check if wrangler is installed
+if ! command -v wrangler &> /dev/null; then
+    echo "❌ Error: wrangler CLI not found"
+    echo "Please install wrangler: npm install -g wrangler"
+    echo "Then login with: wrangler login"
+    exit 1
+fi
 
-print(f'Uploading {adapter_name} to R2 bucket: {bucket_name}')
-result = upload_to_r2(adapter_path, bucket_name, adapter_name)
-print(f'✅ Upload completed: {result}')
-"
+# Create finetune and upload adapter
+echo "📤 Creating finetune and uploading adapter files..."
+wrangler ai finetune create "@cf/mistralai/mistral-7b-instruct-v0.2-lora" "$ADAPTER_NAME" "$ADAPTER_PATH"
 
-echo ""
-echo "✅ Deployment completed!"
-echo "🌐 Your LoRA adapter is now available in R2"
-echo ""
-echo "Next steps:"
-echo "1. Update the R2_ADAPTER_URL in your Cloudflare Worker"
-echo "2. Run 'cd demo && wrangler deploy' to deploy the worker"
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "✅ Deployment completed!"
+    echo "🌐 Your LoRA adapter '$ADAPTER_NAME' is now available in Cloudflare AI"
+    echo ""
+    echo "Next steps:"
+    echo "1. Update your Cloudflare Worker to use adapter: '$ADAPTER_NAME'"
+    echo "2. Run 'cd demo && wrangler deploy' to deploy the worker"
+else
+    echo ""
+    echo "❌ Upload failed!"
+    echo "Common solutions:"
+    echo "1. Run 'wrangler login' to authenticate"
+    echo "2. Check your account has Workers AI enabled"
+    echo "3. Verify the adapter files are valid"
+    exit 1
+fi

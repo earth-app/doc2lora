@@ -49,34 +49,38 @@ def main():
 
     BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "my-documents-bucket")
     FOLDER_PREFIX = os.getenv("R2_FOLDER_PREFIX", "training-docs")  # Optional
-    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
+    R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
     R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL")
 
     # Check if credentials are provided
-    if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, R2_ENDPOINT_URL]):
+    if not all([R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT_URL]):
         print("❌ Missing R2 credentials!")
         print("\nYou can provide credentials in several ways:")
-        print("\n1. Environment variables:")
-        print("  AWS_ACCESS_KEY_ID=your-r2-access-key-id")
-        print("  AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key")
+        print("\n1. Environment variables (preferred):")
+        print("  R2_ACCESS_KEY_ID=your-r2-access-key-id")
+        print("  R2_SECRET_ACCESS_KEY=your-r2-secret-access-key")
         print("  R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
         print(
             "  R2_BUCKET_NAME=your-bucket-name (optional, defaults to 'my-documents-bucket')"
         )
         print("  R2_FOLDER_PREFIX=folder-prefix (optional)")
-        print("\n2. .env file (recommended):")
-        print("  Create a .env file with the following content:")
+        print("\n2. Legacy AWS environment variables (still supported):")
         print("  AWS_ACCESS_KEY_ID=your-r2-access-key-id")
         print("  AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key")
         print("  R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
+        print("\n3. .env file (recommended):")
+        print("  Create a .env file with the following content:")
+        print("  R2_ACCESS_KEY_ID=your-r2-access-key-id")
+        print("  R2_SECRET_ACCESS_KEY=your-r2-secret-access-key")
+        print("  R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
         print("  R2_BUCKET_NAME=my-documents-bucket")
         print("  R2_FOLDER_PREFIX=training-docs")
-        print("\n3. Pass env_file parameter to convert_from_r2():")
+        print("\n4. Pass env_file parameter to convert_from_r2():")
         print("  convert_from_r2(bucket_name='my-bucket', env_file='.env')")
         print("\nExample:")
-        print("  export AWS_ACCESS_KEY_ID=abc123...")
-        print("  export AWS_SECRET_ACCESS_KEY=xyz789...")
+        print("  export R2_ACCESS_KEY_ID=abc123...")
+        print("  export R2_SECRET_ACCESS_KEY=xyz789...")
         print("  export R2_ENDPOINT_URL=https://your-account.r2.cloudflarestorage.com")
         print("  export R2_BUCKET_NAME=training-documents")
         print("  export R2_FOLDER_PREFIX=legal-docs")
@@ -91,23 +95,18 @@ def main():
     try:
         print("🔄 Converting documents from R2 bucket...")
 
-        # Method 1: Convert documents from R2 bucket using explicit credentials
+                # Method 1: Convert documents from R2 bucket using explicit credentials
         adapter_path = convert_from_r2(
             bucket_name=BUCKET_NAME,
             folder_prefix=FOLDER_PREFIX,
             output_path="r2_lora_adapter.json",
             model_name="microsoft/DialoGPT-small",  # Use small model for demo
             max_length=256,  # Smaller context for faster training
-            batch_size=2,  # Small batch size for demo
-            num_epochs=1,  # Just 1 epoch for demo
-            learning_rate=5e-4,
-            lora_r=8,  # Smaller LoRA rank for demo
-            lora_alpha=16,
-            lora_dropout=0.1,
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            batch_size=1,  # Smaller batch for demo
+            num_epochs=1,  # Single epoch for demo
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY,
             endpoint_url=R2_ENDPOINT_URL,
-            cleanup_temp=True,  # Clean up downloaded files
         )
 
         # Method 2: Alternative - using .env file (uncomment to use)

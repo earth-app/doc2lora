@@ -58,8 +58,8 @@ class LoRATrainer:
         self,
         model_name: str = "microsoft/DialoGPT-small",
         max_length: int = 512,
-        lora_r: int = 16,
-        lora_alpha: int = 32,
+        lora_r: int = 8,
+        lora_alpha: int = 16,
         lora_dropout: float = 0.1,
         target_modules: Optional[List[str]] = None,
         device: Optional[str] = None,
@@ -70,7 +70,7 @@ class LoRATrainer:
         Args:
             model_name: Name of the base model to fine-tune
             max_length: Maximum sequence length for tokenization
-            lora_r: LoRA rank parameter
+            lora_r: LoRA rank parameter (max 8 for Cloudflare Workers AI compatibility)
             lora_alpha: LoRA alpha parameter
             lora_dropout: LoRA dropout rate
             target_modules: Target modules for LoRA adaptation
@@ -82,6 +82,13 @@ class LoRATrainer:
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
         self.target_modules = target_modules  # Will be auto-detected if None
+
+        # Warn about LoRA rank limit for Cloudflare Workers AI
+        if lora_r > 8:
+            logger.warning(
+                f"⚠️  LoRA rank {lora_r} exceeds Cloudflare Workers AI limit of 8. "
+                f"Consider using --lora-r 8 for compatibility."
+            )
 
         # Detect and set device
         if device is None:
@@ -335,10 +342,25 @@ class LoRATrainer:
             adapter_dir = output_path.parent / f"{output_path.stem}_adapter"
             self.peft_model.save_pretrained(adapter_dir)
 
+            # Ensure Cloudflare Workers AI compatibility by updating adapter_config.json
+            config_path = adapter_dir / "adapter_config.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+
+                # Add model_type required by Cloudflare Workers AI
+                config["model_type"] = self._get_cloudflare_model_type()
+
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                logger.info(f"✅ Updated adapter_config.json with model_type: {config['model_type']}")
+
             # Create a JSON file with metadata
             metadata = {
                 "adapter_path": str(adapter_dir),
                 "base_model": self.model_name,
+                "model_type": self._get_cloudflare_model_type(),
                 "lora_config": {
                     "r": self.lora_r,
                     "alpha": self.lora_alpha,
@@ -346,15 +368,36 @@ class LoRATrainer:
                     "target_modules": self.target_modules,
                 },
                 "max_length": self.max_length,
+                "cloudflare_compatible": True,
             }
 
             with open(output_path, "w") as f:
                 json.dump(metadata, f, indent=2)
 
+            logger.info(f"🚀 LoRA adapter saved for Cloudflare Workers AI compatibility")
+            logger.info(f"📁 Adapter directory: {adapter_dir}")
+            logger.info(f"📄 Required files: adapter_config.json, adapter_model.safetensors")
+
             return str(output_path)
         else:
             # Save directly as adapter directory
             self.peft_model.save_pretrained(output_path)
+
+            # Ensure Cloudflare Workers AI compatibility by updating adapter_config.json
+            config_path = Path(output_path) / "adapter_config.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+
+                # Add model_type required by Cloudflare Workers AI
+                config["model_type"] = self._get_cloudflare_model_type()
+
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                logger.info(f"✅ Updated adapter_config.json with model_type: {config['model_type']}")
+                logger.info(f"🚀 LoRA adapter saved for Cloudflare Workers AI compatibility")
+
             return str(output_path)
 
     def load_adapter(self, adapter_path: str):
@@ -378,6 +421,26 @@ class LoRATrainer:
         else:
             # Load directly from adapter directory
             self.peft_model.load_adapter(adapter_path)
+
+    def _get_cloudflare_model_type(self) -> str:
+        """
+        Get the model_type required by Cloudflare Workers AI.
+
+        Returns:
+            Model type string ("mistral", "gemma", or "llama")
+        """
+        model_name_lower = self.model_name.lower()
+
+        if "mistral" in model_name_lower:
+            return "mistral"
+        elif "gemma" in model_name_lower:
+            return "gemma"
+        elif "llama" in model_name_lower:
+            return "llama"
+        else:
+            # Default to mistral as it's the most common
+            logger.warning(f"Unknown model type for {self.model_name}, defaulting to 'mistral'")
+            return "mistral"
 
     def _find_target_modules(self):
         """

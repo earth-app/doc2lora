@@ -48,8 +48,8 @@ doc2lora convert ./my_documents \
   --epochs 3 \
   --batch-size 2 \
   --learning-rate 1e-4 \
-  --lora-r 16 \
-  --lora-alpha 32
+  --lora-r 8 \
+  --lora-alpha 16
 ```
 
 #### Advanced Configuration
@@ -63,8 +63,8 @@ doc2lora convert ./training_docs \
   --batch-size 1 \
   --epochs 5 \
   --learning-rate 5e-5 \
-  --lora-r 32 \
-  --lora-alpha 64 \
+  --lora-r 8 \
+  --lora-alpha 16 \
   --lora-dropout 0.05 \
   --verbose
 ```
@@ -188,23 +188,23 @@ export default {
 ### 2. Hyperparameter Tuning
 
 ```python
-# Conservative settings (recommended starting point)
+# Conservative settings (recommended starting point for Cloudflare Workers AI)
 conservative_config = {
     "learning_rate": 1e-4,
     "batch_size": 1,
     "num_epochs": 3,
-    "lora_r": 16,
-    "lora_alpha": 32,
+    "lora_r": 8,  # Max 8 for Cloudflare Workers AI
+    "lora_alpha": 16,
     "max_length": 512
 }
 
-# Aggressive settings (for larger datasets)
-aggressive_config = {
+# Experimental settings (for other platforms supporting higher ranks)
+experimental_config = {
     "learning_rate": 5e-5,
     "batch_size": 2,
     "num_epochs": 5,
-    "lora_r": 32,
-    "lora_alpha": 64,
+    "lora_r": 8,  # Still limited to 8 for compatibility
+    "lora_alpha": 16,
     "max_length": 1024
 }
 ```

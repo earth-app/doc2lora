@@ -38,6 +38,14 @@ def demo_document_parsing():
         ".yml",
         ".xml",
         ".tex",
+        ".zip",
+        ".tar",
+        ".tar.gz",
+        ".tar.bz2",
+        ".tar.xz",
+        ".tgz",
+        ".tbz2",
+        ".txz",
     }
     documents = []
 
@@ -45,7 +53,10 @@ def demo_document_parsing():
         if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
             try:
                 # Read the file content based on extension
-                if file_path.suffix.lower() in {
+                # Handle compound extensions for tar files
+                if file_path.name.lower().endswith(('.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.tbz2', '.txz')):
+                    content = f"[Archive file: {file_path.name} - would be extracted and parsed by doc2lora]"
+                elif file_path.suffix.lower() in {
                     ".txt",
                     ".md",
                     ".json",
@@ -56,6 +67,8 @@ def demo_document_parsing():
                     ".csv",
                 }:
                     content = file_path.read_text(encoding="utf-8", errors="ignore")
+                elif file_path.suffix.lower() in {".zip", ".tar"}:
+                    content = f"[Archive file: {file_path.name} - would be extracted and parsed by doc2lora]"
                 else:
                     # For binary files like PDF, DOCX, just indicate they would be processed
                     content = f"[Binary file: {file_path.name} - would be processed by appropriate parser]"

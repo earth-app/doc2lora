@@ -149,6 +149,21 @@ doc2lora formats
 - **YAML** (.yaml, .yml): YAML configuration files
 - **XML** (.xml): XML documents
 - **LaTeX** (.tex): LaTeX source files
+- **ZIP** (.zip): ZIP archives containing supported documents
+- **TAR** (.tar): TAR archives containing supported documents
+- **Compressed TAR** (.tar.gz, .tgz, .tar.bz2, .tbz2, .tar.xz, .txz): Compressed TAR archives
+
+### Archive Support
+
+Archive formats (.zip, .tar, and compressed variants) are supported by extracting and parsing any supported document files they contain. The parser will:
+
+1. Extract all files from the archive to a temporary location
+2. Identify files with supported document extensions
+3. Parse each supported document using the appropriate parser
+4. Combine all parsed content into a single output with clear file separators
+5. Skip unsupported file types with a notification
+
+This allows you to include entire project documentation, collections of related documents, or backup archives in your LoRA training data.
 
 ## Examples
 
