@@ -31,6 +31,11 @@ try:
 except ImportError:
     yaml = None
 
+try:
+    import openpyxl
+except ImportError:
+    openpyxl = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,6 +54,7 @@ class DocumentParser:
         ".yml",
         ".xml",
         ".tex",
+        ".xlsx",
         ".zip",
         ".tar",
         ".tar.gz",
@@ -72,6 +78,7 @@ class DocumentParser:
         ".yml",
         ".xml",
         ".tex",
+        ".xlsx",
     }
 
     def __init__(self):
@@ -90,6 +97,8 @@ class DocumentParser:
             missing_deps.append("beautifulsoup4 (for HTML support)")
         if yaml is None:
             missing_deps.append("pyyaml (for YAML support)")
+        if openpyxl is None:
+            missing_deps.append("openpyxl (for XLSX support)")
 
         if missing_deps:
             logger.warning(f"Missing optional dependencies: {', '.join(missing_deps)}")
@@ -117,7 +126,7 @@ class DocumentParser:
                 and file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
             ):
                 try:
-                    doc = self.parse_file(file_path)
+                    doc = self.parse_file(file_path, base_path=directory_path)
                     if doc:
                         documents.append(doc)
                 except Exception as e:
@@ -126,12 +135,13 @@ class DocumentParser:
 
         return documents
 
-    def parse_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
+    def parse_file(self, file_path: Path, base_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
         """
         Parse a single file based on its extension.
 
         Args:
             file_path: Path to the file to parse
+            base_path: Base directory path for calculating relative labels
 
         Returns:
             Parsed document with metadata or None if parsing failed
@@ -166,6 +176,8 @@ class DocumentParser:
                 content = self._parse_yaml(file_path)
             elif extension == ".xml":
                 content = self._parse_xml(file_path)
+            elif extension == ".xlsx":
+                content = self._parse_xlsx(file_path)
             elif extension == ".tex":
                 content = self._parse_latex(file_path)
             elif extension == ".zip":
@@ -177,12 +189,38 @@ class DocumentParser:
                 return None
 
             if content:
+                # Calculate directory-based labels if base_path is provided
+                filename_stem = file_path.stem  # filename without extension
+
+                if base_path:
+                    try:
+                        relative_path = file_path.relative_to(base_path)
+                        # Combine parent directory and filename
+                        if relative_path.parent.name and relative_path.parent.name != ".":
+                            dir_name = relative_path.parent.name
+                            label = f"{dir_name}_{filename_stem}"
+                            category_path = str(relative_path.parent).replace("\\", "/")
+                        else:
+                            label = f"root_{filename_stem}"
+                            category_path = ""
+                    except ValueError:
+                        # file_path is not relative to base_path
+                        dir_name = file_path.parent.name if file_path.parent.name else "unknown"
+                        label = f"{dir_name}_{filename_stem}"
+                        category_path = ""
+                else:
+                    dir_name = file_path.parent.name if file_path.parent.name else "unknown"
+                    label = f"{dir_name}_{filename_stem}"
+                    category_path = ""
+
                 return {
                     "content": content,
                     "filename": file_path.name,
                     "filepath": str(file_path),
                     "extension": extension,
                     "size": file_path.stat().st_size,
+                    "label": label,
+                    "category_path": category_path,
                 }
 
         except Exception as e:
@@ -265,6 +303,36 @@ class DocumentParser:
             tree = ET.parse(f)
             root = tree.getroot()
             return ET.tostring(root, encoding="unicode")
+
+    def _parse_xlsx(self, file_path: Path) -> str:
+        """Parse Excel (XLSX) file."""
+        if openpyxl is None:
+            logger.error("openpyxl not installed. Cannot parse XLSX files.")
+            return ""
+
+        try:
+            workbook = openpyxl.load_workbook(file_path, data_only=True)
+            text_content = []
+
+            for sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                text_content.append(f"Sheet: {sheet_name}")
+
+                for row in sheet.iter_rows():
+                    row_data = []
+                    for cell in row:
+                        if cell.value is not None:
+                            row_data.append(str(cell.value))
+                    if row_data:  # Only add non-empty rows
+                        text_content.append("\t".join(row_data))
+
+                text_content.append("")  # Empty line between sheets
+
+            return "\n".join(text_content)
+
+        except Exception as e:
+            logger.error(f"Error parsing XLSX file {file_path}: {e}")
+            return ""
 
     def _parse_latex(self, file_path: Path) -> str:
         """Parse LaTeX file."""
@@ -402,6 +470,8 @@ class DocumentParser:
                 return self._parse_yaml(file_path)
             elif extension == ".xml":
                 return self._parse_xml(file_path)
+            elif extension == ".xlsx":
+                return self._parse_xlsx(file_path)
             elif extension == ".tex":
                 return self._parse_latex(file_path)
             else:

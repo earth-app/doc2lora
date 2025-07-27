@@ -21,7 +21,7 @@ doc2lora --help
 ```bash
 # Install all dependencies
 pip install torch transformers peft datasets
-pip install PyPDF2 python-docx beautifulsoup4 PyYAML click
+pip install PyPDF2 python-docx beautifulsoup4 PyYAML openpyxl click
 
 # Install the package
 pip install -e .
@@ -135,6 +135,7 @@ adapter_path = convert(
 ### 1. Prepare Your Adapter
 
 After training, you'll have two outputs:
+
 - `mistral_adapter.json` - Metadata file
 - `mistral_adapter_adapter/` - Directory with actual adapter weights
 

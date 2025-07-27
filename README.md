@@ -11,9 +11,10 @@ It supports the following formats:
 - **PDF**: `.pdf` files
 - **HTML**: `.html` files
 - **Word Documents**: `.docx` files
+- **Excel Spreadsheets**: `.xlsx` files
 - **CSV**: `.csv` files
 - **JSON**: `.json` files
-- **YAML**: `.yaml` files
+- **YAML**: `.yaml` / `.yml` files
 - **XML**: `.xml` files
 - **LaTeX**: `.tex` files
 - **Archive Formats**: `.zip`, `.tar.gz`, `tar.xz`, etc with supported documents inside
@@ -30,7 +31,7 @@ pip install -e .
 pip install torch transformers peft datasets
 
 # For additional document format support:
-pip install PyPDF2 python-docx beautifulsoup4 PyYAML
+pip install PyPDF2 python-docx beautifulsoup4 PyYAML openpyxl
 
 # For R2 bucket support:
 pip install boto3
@@ -55,6 +56,53 @@ The `convert` function now supports multiple input types:
 - **Array of bytes**: Pass document content as byte arrays
 - **Single string**: Pass individual document content
 - **Single bytes**: Pass individual document as bytes
+
+### Subdirectory-Based Labeling
+
+`doc2lora` now automatically uses subdirectory structure combined with filenames to create detailed labels, making it easy to organize training data by category.
+
+When processing a folder, each document is automatically labeled by combining its subdirectory and filename:
+
+```text
+training_data/
+├── legal/              # Documents labeled as "legal_[filename]"
+│   ├── contract1.pdf   # -> "legal_contract1"
+│   └── agreement.docx  # -> "legal_agreement"
+├── technical/          # Documents labeled as "technical_[filename]"
+│   ├── spec.md         # -> "technical_spec"
+│   └── guide.txt       # -> "technical_guide"
+├── marketing/          # Documents labeled as "marketing_[filename]"
+│   ├── campaign.html   # -> "marketing_campaign"
+│   └── copy.txt        # -> "marketing_copy"
+└── overview.txt        # Root-level files → "root_overview"
+```
+
+**Generated metadata includes:**
+
+```json
+{
+  "content": "Document content...",
+  "filename": "contract1.pdf",
+  "label": "legal_contract1",
+  "category_path": "legal",
+  "extension": ".pdf",
+  "size": 1024
+}
+```
+
+**Use Cases:**
+
+- **Domain + Document type**: legal_contract, legal_agreement, technical_spec, technical_guide
+- **Difficulty + Topic**: beginner_python, intermediate_javascript, advanced_algorithms
+- **Type + Content**: manual_installation, faq_troubleshooting, tutorial_setup
+- **Language + Region**: en_privacy_policy, es_terms_service, fr_user_guide
+- **Time + Event**: 2023_quarterly_report, 2024_annual_summary, current_status
+
+```bash
+# See the labeling feature in action
+cd examples
+python subdirectory_labeling_demo.py
+```
 
 ### Local Documents
 
@@ -161,6 +209,7 @@ doc2lora/
 │   └── utils.py        # Utility functions
 ├── examples/           # Example usage
 │   ├── basic_usage.py  # Working example script
+│   ├── subdirectory_labeling_demo.py # Subdirectory labeling demonstration
 │   ├── mistral_usage.py # Mistral model example with HF API key
 │   ├── gemma_usage.py  # Gemma model example for Cloudflare AI
 │   ├── llama_usage.py  # Llama model example for Cloudflare AI
@@ -326,7 +375,8 @@ doc2lora convert ./docs \
 ## Features
 
 - ✅ **Document Parsing**: Recursively scan directories for supported document types
-- ✅ **Multiple Formats**: Support for 15+ document formats including archives
+- ✅ **Subdirectory Labeling**: Automatically label documents based on directory structure and filename
+- ✅ **Multiple Formats**: Support for 16+ document formats including archives
 - ✅ **Archive Support**: Extract and parse documents from ZIP and TAR archives
 - ✅ **R2 Bucket Support**: Direct integration with Cloudflare R2 storage buckets
 - ✅ **CLI Interface**: Easy-to-use command-line interface

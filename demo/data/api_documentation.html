@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Development API Documentation</title>
+</head>
+<body>
+    <header>
+        <h1>Software Development API Reference</h1>
+        <p>Complete guide to the Software Development Assistant API</p>
+    </header>
+
+    <main>
+        <section>
+            <h2>Authentication</h2>
+            <p>All API requests require authentication using an API key in the Authorization header:</p>
+            <code>Authorization: Bearer YOUR_API_KEY</code>
+
+            <h3>Rate Limits</h3>
+            <ul>
+                <li>Free tier: 100 requests per hour</li>
+                <li>Pro tier: 1000 requests per hour</li>
+                <li>Enterprise: Unlimited</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Chat Endpoints</h2>
+
+            <h3>POST /api/v1/chat</h3>
+            <p>Send a message to the Software Development Assistant and receive a response.</p>
+
+            <h4>Request Body</h4>
+            <pre>
+{
+  "message": "How do I implement authentication in Node.js?",
+  "context": "building a REST API",
+  "language": "javascript"
+}
+            </pre>
+
+            <h4>Response</h4>
+            <pre>
+{
+  "response": "For implementing authentication in Node.js REST APIs, I recommend using JWT tokens...",
+  "suggestions": [
+    "Consider using bcrypt for password hashing",
+    "Implement refresh token rotation",
+    "Use HTTPS in production"
+  ],
+  "references": ["nodejs-auth-guide", "jwt-best-practices"]
+}
+            </pre>
+        </section>
+
+        <section>
+            <h2>Code Analysis Endpoints</h2>
+
+            <h3>POST /api/v1/analyze</h3>
+            <p>Analyze code for best practices, potential issues, and improvements.</p>
+
+            <h4>Supported Languages</h4>
+            <ul>
+                <li>JavaScript/TypeScript</li>
+                <li>Python</li>
+                <li>Java</li>
+                <li>C#</li>
+                <li>Go</li>
+                <li>Rust</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Error Handling</h2>
+            <p>The API uses standard HTTP status codes:</p>
+            <ul>
+                <li><strong>200</strong> - Success</li>
+                <li><strong>400</strong> - Bad Request</li>
+                <li><strong>401</strong> - Unauthorized</li>
+                <li><strong>429</strong> - Rate Limit Exceeded</li>
+                <li><strong>500</strong> - Internal Server Error</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2025 Software Development Assistant. All rights reserved.</p>
+    </footer>
+</body>
+</html>

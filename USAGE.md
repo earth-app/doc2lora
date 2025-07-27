@@ -144,6 +144,7 @@ doc2lora formats
 - **PDF** (.pdf): Text extraction from PDF documents
 - **HTML** (.html): Text extraction from HTML
 - **Word** (.docx): Microsoft Word documents
+- **Excel** (.xlsx): Excel spreadsheet files
 - **CSV** (.csv): Comma-separated values
 - **JSON** (.json): JSON data files
 - **YAML** (.yaml, .yml): YAML configuration files
