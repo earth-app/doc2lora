@@ -110,7 +110,7 @@ def demo_llama_training():
             batch_size=1,  # Small batch due to memory requirements
             num_epochs=3,  # Good balance for Llama 2
             learning_rate=2e-4,  # Optimal for Llama 2 fine-tuning
-            lora_r=8,  # Max 8 for Cloudflare Workers AI compatibility
+            lora_r=8,  # default 8; Cloudflare Workers AI supports up to 32
             lora_alpha=16,  # 2x rank ratio
             lora_dropout=0.05,  # Low dropout for stable training
         )
@@ -144,12 +144,15 @@ def show_cloudflare_usage(adapter_path):
     print("☁️  Cloudflare Workers AI Integration")
     print(f"{'='*60}")
 
-    print(
-        """
+    print("""
 🔧 To use your Llama 2 LoRA adapter with Cloudflare Workers AI:
 
 1. **Upload your adapter**:
    ```bash
+   # Easiest: doc2lora deploy uploads and validates the adapter
+   doc2lora deploy ./output/llama_lora_adapter.json my-llama-adapter
+
+   # Or upload manually with wrangler
    wrangler ai lora upload my-llama-adapter ./llama_lora_adapter_adapter/
    ```
 
@@ -182,8 +185,7 @@ def show_cloudflare_usage(adapter_path):
 - Use proper chat format in training data
 - Include diverse conversation examples
 - Monitor memory usage (Llama 2 is memory-intensive)
-"""
-    )
+""")
 
 
 def main():
@@ -199,8 +201,7 @@ def main():
         print(f"\n{'='*60}")
         print("📚 Llama 2 Resources")
         print(f"{'='*60}")
-        print(
-            """
+        print("""
 🔗 **Useful Links:**
 - Llama 2 Model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
 - Cloudflare Workers AI: https://developers.cloudflare.com/workers-ai/
@@ -210,8 +211,7 @@ def main():
 - Always use the chat format for Llama 2-Chat models
 - Include system messages to guide behavior
 - Use diverse training examples for better generalization
-"""
-        )
+""")
 
     except Exception as e:
         print(f"❌ Demo failed: {e}")

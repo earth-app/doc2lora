@@ -111,7 +111,7 @@ def demo_gemma_training():
             batch_size=1,  # Small batch for memory efficiency
             num_epochs=3,  # Good balance for Gemma
             learning_rate=2e-4,  # Optimal for Gemma fine-tuning
-            lora_r=8,  # Max 8 for Cloudflare Workers AI compatibility
+            lora_r=8,  # default 8; Cloudflare Workers AI supports up to 32
             lora_alpha=16,  # 2x rank ratio
             lora_dropout=0.05,  # Lower dropout for Gemma
         )
@@ -145,13 +145,15 @@ def show_cloudflare_usage(adapter_path):
     print("☁️  Cloudflare Workers AI Integration")
     print(f"{'='*60}")
 
-    print(
-        """
+    print("""
 🔧 To use your Gemma LoRA adapter with Cloudflare Workers AI:
 
 1. **Upload your adapter**:
    ```bash
-   # Upload the adapter to Cloudflare
+   # Easiest: doc2lora deploy uploads and validates the adapter
+   doc2lora deploy ./output/gemma_lora_adapter.json my-gemma-adapter
+
+   # Or upload manually with wrangler
    wrangler ai lora upload my-gemma-adapter ./gemma_lora_adapter_adapter/
    ```
 
@@ -182,8 +184,7 @@ def show_cloudflare_usage(adapter_path):
 - Use diverse, high-quality training data
 - Keep LoRA rank between 8-16 for best results
 - Monitor training loss to prevent overfitting
-"""
-    )
+""")
 
 
 def main():
@@ -199,8 +200,7 @@ def main():
         print(f"\n{'='*60}")
         print("📚 Gemma Resources")
         print(f"{'='*60}")
-        print(
-            """
+        print("""
 🔗 **Useful Links:**
 - Gemma Model: https://huggingface.co/google/gemma-7b-it
 - Cloudflare Workers AI: https://developers.cloudflare.com/workers-ai/
@@ -210,8 +210,7 @@ def main():
 - Start with small datasets for testing
 - Use validation data to monitor progress
 - Experiment with different LoRA parameters
-"""
-        )
+""")
 
     except Exception as e:
         print(f"❌ Demo failed: {e}")

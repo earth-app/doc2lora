@@ -130,7 +130,7 @@ def demo_mistral_training():
             batch_size=1,  # Small batch for memory efficiency
             max_length=512,
             learning_rate=1e-4,  # Lower learning rate for Mistral
-            lora_r=8,  # Max 8 for Cloudflare Workers AI compatibility
+            lora_r=8,  # default 8; Cloudflare Workers AI supports up to 32
             lora_alpha=16,  # 2x rank ratio
             lora_dropout=0.1,
         )
@@ -174,13 +174,15 @@ def show_cloudflare_usage(adapter_path):
     print("🌐 Using with Cloudflare Workers AI")
     print(f"{'='*60}")
 
-    print(
-        """
+    print("""
 To use your trained LoRA adapter with Cloudflare Workers AI:
 
-1. Upload your adapter to Cloudflare:
+1. Upload your adapter to Cloudflare Workers AI:
    ```bash
-   # Upload the adapter directory to Cloudflare R2 or similar storage
+   # Easiest: let doc2lora upload and validate the adapter for you
+   doc2lora deploy ./output/mistral_adapter.json mistral-adapter
+
+   # Or upload the adapter directory to R2 manually
    wrangler r2 object put my-bucket/mistral-adapter ./output/mistral_adapter_adapter/
    ```
 
@@ -203,8 +205,7 @@ To use your trained LoRA adapter with Cloudflare Workers AI:
    ```
 
 3. The model will now use your fine-tuned knowledge from the documents!
-"""
-    )
+""")
 
 
 def main():
@@ -222,8 +223,7 @@ def main():
         print(f"\n{'='*60}")
         print("📚 Additional Tips")
         print(f"{'='*60}")
-        print(
-            """
+        print("""
 For better results with Mistral:
 - Use more training data (100+ documents)
 - Increase training epochs (3-5)
@@ -236,8 +236,7 @@ Supported Mistral models:
 - mistralai/Mistral-7B-Instruct-v0.1
 - mistralai/Mistral-7B-Instruct-v0.2
 - mistralai/Mistral-7B-Instruct-v0.3
-"""
-        )
+""")
 
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
