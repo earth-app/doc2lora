@@ -3,6 +3,8 @@
 import inspect
 import json
 import logging
+import os
+import platform
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -45,7 +47,41 @@ except ImportError:
 # Cloudflare Workers AI accepts BYO LoRA adapters up to rank 32 (300MB safetensors)
 CLOUDFLARE_MAX_RANK = 32
 
+# torch.compile pays off on long CUDA runs but its one-time compile cost is roughly
+# net-neutral on short ones; the auto path only enables it on CUDA above this much
+# input text (~10 MB), where the speedup clearly outweighs the compile latency
+TORCH_COMPILE_AUTO_MIN_CHARS = 10 * 1024 * 1024
+
 logger = logging.getLogger(__name__)
+
+
+def _torch_ge(major: int, minor: int) -> bool:
+    """Return True if the installed torch is >= the given (major, minor)."""
+    try:
+        parts = torch.__version__.split("+")[0].split(".")
+        return (int(parts[0]), int(parts[1])) >= (major, minor)
+    except Exception:
+        return False
+
+
+def apply_runtime_perf_flags(device_type: str) -> None:
+    """Apply safe, cross-platform runtime performance flags.
+
+    - TF32 matmul (``set_float32_matmul_precision('high')``) is a no-op on CPU,
+      MPS, and pre-Ampere CUDA, and a large free speedup on Ampere+ GPUs.
+    - On MPS, default the CPU-fallback env var so unsupported ops don't hard
+      crash (a safety net, not a speedup; best exported in the shell too).
+    """
+    try:
+        # safe everywhere: only Ampere+ CUDA actually uses TF32, else no-op
+        torch.set_float32_matmul_precision("high")
+        if device_type == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        elif device_type == "mps":
+            os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    except Exception as e:  # never let a perf flag break training
+        logger.debug(f"Could not apply runtime perf flags: {e}")
 
 
 def get_device():
@@ -87,6 +123,9 @@ class LoRATrainer:
         device: Optional[str] = None,
         gradient_checkpointing: bool = True,
         load_in_4bit: bool = False,
+        attn_implementation: Optional[str] = None,
+        chunk_long_documents: bool = True,
+        chunk_overlap: int = 0,
     ):
         """
         Initialize the LoRA trainer.
@@ -101,6 +140,13 @@ class LoRATrainer:
             device: Device to use for training ('cuda', 'mps', 'cpu', or None for auto-detection)
             gradient_checkpointing: Trade compute for memory (helps on low-RAM machines)
             load_in_4bit: Use 4-bit QLoRA (requires bitsandbytes + CUDA; ignored otherwise)
+            attn_implementation: Attention kernel passed to from_pretrained
+                ("sdpa", "flash_attention_2", "eager"). None lets transformers pick
+                (sdpa when available); falls back to eager if the model rejects it.
+            chunk_long_documents: Split documents longer than max_length into
+                multiple training examples instead of truncating to the first
+                max_length tokens (default True; trains on all content)
+            chunk_overlap: Token overlap between consecutive chunks (default 0)
         """
         self.model_name = model_name
         self.max_length = max_length
@@ -110,6 +156,9 @@ class LoRATrainer:
         self.target_modules = target_modules  # Will be auto-detected if None
         self.gradient_checkpointing = gradient_checkpointing
         self.load_in_4bit = load_in_4bit
+        self.attn_implementation = attn_implementation
+        self.chunk_long_documents = chunk_long_documents
+        self.chunk_overlap = chunk_overlap
         self.use_bf16 = False  # resolved in _load_model
 
         # Warn about LoRA rank limit for Cloudflare Workers AI
@@ -139,13 +188,25 @@ class LoRATrainer:
 
         self._load_model()
 
+    @staticmethod
+    def _mps_supports_bf16() -> bool:
+        """bf16 autocast on MPS needs torch>=2.5 and macOS 14+; probe defensively."""
+        if not _torch_ge(2, 5):
+            return False
+        try:
+            major = int(platform.mac_ver()[0].split(".")[0])
+            return major >= 14
+        except Exception:
+            return False
+
     def _load_model(self):
         """Load the base model and tokenizer."""
         logger.info(f"Loading model: {self.model_name}")
 
-        # Get HuggingFace token from environment
-        import os
+        # safe cross-platform perf flags (TF32 on Ampere+, MPS cpu-fallback)
+        apply_runtime_perf_flags(self.device.type)
 
+        # Get HuggingFace token from environment
         hf_token = os.getenv("HF_API_KEY") or os.getenv("HUGGINGFACE_API_TOKEN")
         auth_kwargs = {"token": hf_token} if hf_token else {}
 
@@ -155,7 +216,7 @@ class LoRATrainer:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         is_cuda = self.device.type == "cuda"
-        is_gpu_available = self.device.type in ["cuda", "mps"]
+        is_mps = self.device.type == "mps"
 
         # resolve 4-bit QLoRA availability (cuda + bitsandbytes only)
         if self.load_in_4bit and not (
@@ -167,14 +228,22 @@ class LoRATrainer:
             )
             self.load_in_4bit = False
 
-        # prefer bf16 on capable CUDA hardware, else fp16 on gpu, else fp32
-        self.use_bf16 = is_cuda and torch.cuda.is_bf16_supported()
-        if is_gpu_available:
+        # precision ladder: bf16 on capable CUDA/MPS, fp16 on other CUDA, else fp32.
+        # fp16 autocast on MPS is NaN-prone, so MPS uses bf16 (macOS 14+) or fp32
+        # (bf16 has the same memory footprint as fp16, so 7B still fits where fp16 did)
+        self.use_bf16 = (is_cuda and torch.cuda.is_bf16_supported()) or (
+            is_mps and self._mps_supports_bf16()
+        )
+        if is_cuda:
             compute_dtype = torch.bfloat16 if self.use_bf16 else torch.float16
-            logger.info(f"💾 Using {compute_dtype} precision for GPU training")
+            logger.info(f"💾 Using {compute_dtype} precision for CUDA training")
+        elif is_mps:
+            compute_dtype = torch.bfloat16 if self.use_bf16 else torch.float32
+            label = "bf16" if self.use_bf16 else "fp32"
+            logger.info(f"🍎 Using {label} precision on MPS (fp16 is NaN-prone)")
         else:
             compute_dtype = torch.float32
-            logger.info("💾 Using float32 precision for CPU training")
+            logger.info("💻 Using float32 precision for CPU training")
 
         load_kwargs = {"low_cpu_mem_usage": True, **auth_kwargs}
         if self.load_in_4bit:
@@ -190,11 +259,29 @@ class LoRATrainer:
             load_kwargs["torch_dtype"] = compute_dtype
             load_kwargs["device_map"] = None
 
+        # explicit attention kernel (sdpa is auto-selected by modern transformers)
+        if self.attn_implementation:
+            load_kwargs["attn_implementation"] = self.attn_implementation
+
         def _load(**kwargs):
             return AutoModelForCausalLM.from_pretrained(self.model_name, **kwargs)
 
         try:
-            self.model = _load(**load_kwargs)
+            try:
+                self.model = _load(**load_kwargs)
+            except Exception as attn_err:
+                # a model/runtime that rejects the requested attention impl
+                # shouldn't force a CPU fallback; retry once with eager
+                if load_kwargs.get("attn_implementation") not in (None, "eager"):
+                    logger.warning(
+                        f"⚠️  attn_implementation "
+                        f"'{load_kwargs['attn_implementation']}' unavailable "
+                        f"({attn_err}); retrying with eager"
+                    )
+                    load_kwargs["attn_implementation"] = "eager"
+                    self.model = _load(**load_kwargs)
+                else:
+                    raise
             if not self.load_in_4bit:
                 self.model = self.model.to(self.device)
             logger.info(f"📱 Model loaded successfully on {self.device}")
@@ -271,7 +358,19 @@ class LoRATrainer:
             if content.strip():
                 texts.append(content)
 
-        # Tokenize texts
+        if self.chunk_long_documents:
+            # long docs become several examples instead of being truncated away
+            input_ids, attention = self._chunk_texts(texts)
+            logger.info(
+                f"Prepared {len(input_ids)} training examples from {len(texts)} "
+                f"documents (chunked at max_length={self.max_length}, "
+                f"overlap={self.chunk_overlap})"
+            )
+            return Dataset.from_dict(
+                {"input_ids": input_ids, "attention_mask": attention}
+            )
+
+        # legacy path: one example per document, truncated to max_length
         def tokenize_function(examples):
             return self.tokenizer(
                 examples["text"],
@@ -281,13 +380,162 @@ class LoRATrainer:
                 return_overflowing_tokens=False,
             )
 
-        # Create dataset
         dataset = Dataset.from_dict({"text": texts})
-        tokenized_dataset = dataset.map(
-            tokenize_function, batched=True, remove_columns=["text"]
-        )
+        return dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
-        return tokenized_dataset
+    def _chunk_texts(self, texts: List[str]):
+        """Tokenize each document and window it into <= max_length-token chunks.
+
+        Documents longer than max_length become several training examples (stepping
+        by max_length - chunk_overlap) instead of being truncated to the first
+        max_length tokens; a tiny trailing remainder is dropped to avoid degenerate
+        examples. Tokenizer-agnostic - it slices the token ids directly.
+        """
+        overlap = max(0, min(self.chunk_overlap, self.max_length - 1))
+        step = self.max_length - overlap
+        min_chunk = min(8, self.max_length)  # drop near-empty trailing chunks
+
+        input_ids_out: List[List[int]] = []
+        attention_out: List[List[int]] = []
+        for text in texts:
+            ids = self.tokenizer(text, truncation=False, padding=False)["input_ids"]
+            if not ids:
+                continue
+            if len(ids) <= self.max_length:
+                input_ids_out.append(ids)
+                attention_out.append([1] * len(ids))
+                continue
+            start = 0
+            while start < len(ids):
+                window = ids[start : start + self.max_length]
+                is_last = start + self.max_length >= len(ids)
+                if start == 0 or len(window) >= min_chunk:
+                    input_ids_out.append(window)
+                    attention_out.append([1] * len(window))
+                if is_last:
+                    break
+                start += step
+        return input_ids_out, attention_out
+
+    def _select_optim(self) -> str:
+        """Pick the optimizer: fused AdamW on CUDA (torch>=2.8), else plain AdamW.
+
+        The fused AdamW kernel is CUDA-only and matured in torch 2.8 (mirrors the
+        HF Trainer's own default-selection logic). Same math as adamw_torch.
+        """
+        if self.device.type == "cuda" and _torch_ge(2, 8):
+            return "adamw_torch_fused"
+        return "adamw_torch"
+
+    def _should_compile(
+        self, requested: Optional[bool], documents: List[Dict[str, Any]]
+    ) -> bool:
+        """Resolve torch.compile: explicit override, else auto on CUDA for big corpora.
+
+        torch.compile is CUDA-weighted and adds a one-time compile cost, so the
+        auto path (requested is None) only turns it on when training on CUDA and
+        the corpus is large enough (>= TORCH_COMPILE_AUTO_MIN_CHARS of text) for the
+        speedup to outweigh that cost. True/False force it on/off regardless.
+        """
+        if requested is not None:
+            return requested
+        if self.device.type != "cuda":
+            return False
+        total_chars = sum(len(doc.get("content", "")) for doc in documents)
+        return total_chars >= TORCH_COMPILE_AUTO_MIN_CHARS
+
+    @staticmethod
+    def _should_group_by_length(requested: Optional[bool], batch_size: int) -> bool:
+        """Auto-enable length-grouped batching only where it can cut padding.
+
+        With dynamic padding it pads each batch to its own longest member, so it
+        only helps at batch_size >= 2 (a batch of one has nothing to pad to). It's
+        hardware-agnostic. True/False override the heuristic.
+        """
+        if requested is not None:
+            return requested
+        return batch_size >= 2
+
+    def _build_training_arguments(
+        self,
+        output_dir: str,
+        batch_size: int,
+        num_epochs: Optional[int],
+        max_steps: Optional[int],
+        learning_rate: float,
+        gradient_accumulation_steps: int,
+        warmup_steps: int,
+        optim: str,
+        group_by_length: bool,
+        dataloader_num_workers: Optional[int],
+        torch_compile: bool,
+    ) -> "TrainingArguments":
+        """Build TrainingArguments with device-aware, version-robust perf defaults.
+
+        Version-sensitive fields are only set when the installed transformers
+        accepts them (e.g. group_by_length was renamed to train_sampling_strategy
+        in transformers 5.x), so this stays correct across 4.x and 5.x.
+        """
+        is_cuda = self.device.type == "cuda"
+
+        training_kwargs: Dict[str, Any] = {
+            "output_dir": output_dir,
+            "per_device_train_batch_size": batch_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "warmup_steps": warmup_steps,
+            "learning_rate": learning_rate,
+            "bf16": self.use_bf16,
+            "fp16": is_cuda and not self.use_bf16,
+            "logging_steps": 10,
+            "save_strategy": "epoch" if max_steps is None else "steps",
+            "remove_unused_columns": False,
+            "dataloader_drop_last": True,
+            "report_to": [],
+            # fused AdamW on CUDA, plain AdamW elsewhere
+            "optim": optim,
+            # pinned host memory only helps the CUDA host->device copy
+            "dataloader_pin_memory": is_cuda,
+        }
+
+        if dataloader_num_workers:
+            training_kwargs["dataloader_num_workers"] = dataloader_num_workers
+
+        # TF32 matmul on Ampere+ (no-op on older CUDA; harmless flag)
+        if is_cuda:
+            training_kwargs["tf32"] = True
+
+        # gradient checkpointing for 4-bit is handled in _load_model; let the
+        # Trainer own it for the standard path
+        if self.gradient_checkpointing and not self.load_in_4bit:
+            training_kwargs["gradient_checkpointing"] = True
+            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+
+        # epochs vs steps
+        if max_steps is not None:
+            training_kwargs["max_steps"] = max_steps
+            training_kwargs["save_steps"] = max(1, max_steps // 10)
+        else:
+            training_kwargs["num_train_epochs"] = num_epochs or 3
+
+        # only pass fields the installed TrainingArguments actually accepts
+        valid = set(inspect.signature(TrainingArguments.__init__).parameters)
+
+        if torch_compile:
+            training_kwargs["torch_compile"] = True
+
+        # length-grouped batching cuts padding; field renamed in transformers 5.x
+        if group_by_length:
+            if "group_by_length" in valid:
+                training_kwargs["group_by_length"] = True
+            elif "train_sampling_strategy" in valid:
+                training_kwargs["train_sampling_strategy"] = "group_by_length"
+
+        dropped = [k for k in training_kwargs if k not in valid]
+        for key in dropped:
+            logger.debug(f"TrainingArguments has no '{key}'; skipping it")
+            training_kwargs.pop(key)
+
+        return TrainingArguments(**training_kwargs)
 
     def train(
         self,
@@ -298,6 +546,10 @@ class LoRATrainer:
         learning_rate: float = 5e-4,
         gradient_accumulation_steps: int = 1,
         output_dir: str = "./lora_training_output",
+        group_by_length: Optional[bool] = None,
+        dataloader_num_workers: Optional[int] = None,
+        torch_compile: Optional[bool] = None,
+        optim: Optional[str] = None,
     ):
         """
         Train the LoRA model on the documents.
@@ -311,13 +563,22 @@ class LoRATrainer:
             gradient_accumulation_steps: Accumulate grads to emulate a larger batch
                 on low-memory machines (effective batch = batch_size * this)
             output_dir: Directory to save training outputs
+            group_by_length: Group similar-length samples to cut padding. None
+                (default) auto-enables it when batch_size >= 2 (no padding to cut
+                at batch_size 1); True/False force it on/off
+            dataloader_num_workers: DataLoader worker processes (None/0 -> in-process;
+                only raise on Linux/CUDA with a heavy pipeline)
+            torch_compile: Compile the model with torch.compile. None (default)
+                auto-enables it on CUDA when the corpus is large (>= ~10 MB of text),
+                where the one-time compile cost is amortized; True/False force it
+                on/off. CUDA-weighted; can add compile latency / recompiles.
+            optim: Override the optimizer string (defaults to fused AdamW on CUDA)
         """
         logger.info("Starting LoRA training")
 
         # Prepare dataset
         dataset = self._prepare_dataset(documents)
 
-        # Prepare training arguments
         is_cuda = self.device.type == "cuda"
         is_gpu_available = self.device.type in ["cuda", "mps"]
 
@@ -327,26 +588,23 @@ class LoRATrainer:
         total_steps = max_steps or steps_per_epoch * (num_epochs or 3)
         warmup_steps = min(100, max(0, total_steps // 10))
 
-        training_kwargs = {
-            "output_dir": output_dir,
-            "per_device_train_batch_size": batch_size,
-            "gradient_accumulation_steps": gradient_accumulation_steps,
-            "warmup_steps": warmup_steps,
-            "learning_rate": learning_rate,
-            "bf16": self.use_bf16,
-            "fp16": is_cuda and not self.use_bf16,
-            "logging_steps": 10,
-            "save_strategy": "epoch" if max_steps is None else "steps",
-            "remove_unused_columns": False,
-            "dataloader_drop_last": True,
-            "report_to": [],
-        }
+        resolved_optim = optim or self._select_optim()
+        resolved_compile = self._should_compile(torch_compile, documents)
+        resolved_group = self._should_group_by_length(group_by_length, batch_size)
 
-        # gradient checkpointing for 4-bit is handled in _load_model; let the
-        # Trainer own it for the standard path
-        if self.gradient_checkpointing and not self.load_in_4bit:
-            training_kwargs["gradient_checkpointing"] = True
-            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+        training_args = self._build_training_arguments(
+            output_dir=output_dir,
+            batch_size=batch_size,
+            num_epochs=num_epochs,
+            max_steps=max_steps,
+            learning_rate=learning_rate,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            warmup_steps=warmup_steps,
+            optim=resolved_optim,
+            group_by_length=resolved_group,
+            dataloader_num_workers=dataloader_num_workers,
+            torch_compile=resolved_compile,
+        )
 
         # Log training configuration
         logger.info("🏋️  Training configuration:")
@@ -358,28 +616,24 @@ class LoRATrainer:
         logger.info(
             f"   Precision: {'bf16' if self.use_bf16 else ('fp16' if is_cuda else 'fp32')}"
         )
+        logger.info(f"   Optimizer: {resolved_optim}")
         logger.info(f"   Gradient checkpointing: {self.gradient_checkpointing}")
         logger.info(f"   QLoRA (4-bit): {self.load_in_4bit}")
+        if resolved_group:
+            how = " (auto: batch>=2)" if group_by_length is None else ""
+            logger.info(f"   Length-grouped batching: on{how}")
+        if resolved_compile:
+            how = " (auto: CUDA + large corpus)" if torch_compile is None else ""
+            logger.info(f"   torch.compile: on{how}")
         if not is_gpu_available:
             logger.info(
                 "   ⚡ Tip: Training on CPU is slower. A GPU (or 4-bit QLoRA on "
                 "CUDA) speeds this up substantially."
             )
 
-        # Set either epochs or max_steps
-        if max_steps is not None:
-            training_kwargs["max_steps"] = max_steps
-            training_kwargs["save_steps"] = max(
-                1, max_steps // 10
-            )  # Save every 10% of training
-        else:
-            training_kwargs["num_train_epochs"] = num_epochs or 3
-
-        training_args = TrainingArguments(**training_kwargs)
-
-        # Data collator
+        # Data collator; pad to a multiple of 8 to align with GPU tensor cores
         data_collator = DataCollatorForLanguageModeling(
-            tokenizer=self.tokenizer, mlm=False
+            tokenizer=self.tokenizer, mlm=False, pad_to_multiple_of=8
         )
 
         # Initialize trainer; newer transformers renamed `tokenizer` ->

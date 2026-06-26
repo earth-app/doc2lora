@@ -33,6 +33,18 @@ def convert(
     gradient_accumulation_steps: int = 1,
     gradient_checkpointing: bool = True,
     load_in_4bit: bool = False,
+    attn_implementation: Optional[str] = None,
+    group_by_length: Optional[bool] = None,
+    dataloader_num_workers: Optional[int] = None,
+    torch_compile: Optional[bool] = None,
+    optim: Optional[str] = None,
+    audio_backend: str = "faster-whisper",
+    whisper_model_size: str = "base",
+    ocr_languages: str = "eng",
+    video_frame_interval: float = 1.0,
+    max_workers: Optional[int] = None,
+    chunk_long_documents: bool = True,
+    chunk_overlap: int = 0,
     **kwargs,
 ) -> str:
     """
@@ -57,6 +69,23 @@ def convert(
         lora_alpha: LoRA alpha parameter
         lora_dropout: LoRA dropout rate
         device: Device to use for training ('cuda', 'mps', 'cpu', or None for auto-detection)
+        attn_implementation: Attention kernel for from_pretrained ("sdpa",
+            "flash_attention_2", "eager"); None lets transformers auto-pick sdpa
+        group_by_length: Group similar-length samples to reduce padding; None
+            (default) auto-enables it at batch_size >= 2, True/False force it
+        dataloader_num_workers: DataLoader worker processes (None/0 -> in-process)
+        torch_compile: torch.compile the model; None (default) auto-enables on CUDA
+            for large corpora (>= ~10 MB text), True/False force it on/off
+        optim: Override optimizer string (default: fused AdamW on CUDA, else AdamW)
+        audio_backend: Speech-to-text backend ("faster-whisper" default,
+            "openai-whisper", "speech_recognition", or "auto")
+        whisper_model_size: Whisper model size ("tiny".."large-v3")
+        ocr_languages: Tesseract language code(s) for image/video OCR (e.g. "eng")
+        video_frame_interval: Seconds between sampled video frames for OCR
+        max_workers: Thread-pool size for parsing the documents directory
+        chunk_long_documents: Split docs longer than max_length into multiple
+            training examples instead of truncating (default True; uses all content)
+        chunk_overlap: Token overlap between consecutive chunks (default 0)
         **kwargs: Additional arguments
 
     Returns:
@@ -75,8 +104,14 @@ def convert(
         documents = _process_input_data(input_data)
     else:
         logger.info(f"Starting document conversion from: {documents_path}")
-        # Parse documents from directory
-        parser = DocumentParser()
+        # Parse documents from directory (files parsed concurrently by the parser)
+        parser = DocumentParser(
+            audio_backend=audio_backend,
+            whisper_model_size=whisper_model_size,
+            ocr_languages=ocr_languages,
+            video_frame_interval=video_frame_interval,
+            max_workers=max_workers,
+        )
         documents = parser.parse_directory(documents_path)
 
     if not documents:
@@ -94,6 +129,9 @@ def convert(
         device=device,
         gradient_checkpointing=gradient_checkpointing,
         load_in_4bit=load_in_4bit,
+        attn_implementation=attn_implementation,
+        chunk_long_documents=chunk_long_documents,
+        chunk_overlap=chunk_overlap,
     )
 
     # Train the model
@@ -104,6 +142,10 @@ def convert(
         max_steps=max_steps,
         learning_rate=learning_rate,
         gradient_accumulation_steps=gradient_accumulation_steps,
+        group_by_length=group_by_length,
+        dataloader_num_workers=dataloader_num_workers,
+        torch_compile=torch_compile,
+        optim=optim,
     )
 
     # Save the LoRA adapter
@@ -212,6 +254,18 @@ def convert_from_r2(
     gradient_accumulation_steps: int = 1,
     gradient_checkpointing: bool = True,
     load_in_4bit: bool = False,
+    attn_implementation: Optional[str] = None,
+    group_by_length: Optional[bool] = None,
+    dataloader_num_workers: Optional[int] = None,
+    torch_compile: Optional[bool] = None,
+    optim: Optional[str] = None,
+    audio_backend: str = "faster-whisper",
+    whisper_model_size: str = "base",
+    ocr_languages: str = "eng",
+    video_frame_interval: float = 1.0,
+    max_workers: Optional[int] = None,
+    chunk_long_documents: bool = True,
+    chunk_overlap: int = 0,
     aws_access_key_id: str = None,
     aws_secret_access_key: str = None,
     endpoint_url: str = None,
@@ -278,6 +332,18 @@ def convert_from_r2(
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=gradient_checkpointing,
             load_in_4bit=load_in_4bit,
+            attn_implementation=attn_implementation,
+            group_by_length=group_by_length,
+            dataloader_num_workers=dataloader_num_workers,
+            torch_compile=torch_compile,
+            optim=optim,
+            audio_backend=audio_backend,
+            whisper_model_size=whisper_model_size,
+            ocr_languages=ocr_languages,
+            video_frame_interval=video_frame_interval,
+            max_workers=max_workers,
+            chunk_long_documents=chunk_long_documents,
+            chunk_overlap=chunk_overlap,
             **kwargs,
         )
 
