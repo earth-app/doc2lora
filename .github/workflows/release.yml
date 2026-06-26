@@ -11,6 +11,10 @@ on:
         description: 'Suffix to append to the version'
         default: ''
 
+# default least privilege; publish/release jobs elevate per-job below
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

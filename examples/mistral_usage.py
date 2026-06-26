@@ -12,7 +12,8 @@ def setup_hf_authentication():
     """Setup HuggingFace authentication from environment variable."""
     hf_api_key = os.getenv("HF_API_KEY")
     if hf_api_key:
-        print(f"✅ HuggingFace API key found: {hf_api_key[:8]}...")
+        # don't echo any part of the key (avoids logging sensitive data)
+        print("✅ HuggingFace API key found")
         # Set the token for transformers library
         os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_api_key
         return True
