@@ -40,7 +40,7 @@ jobs:
       - name: Check built package
         run: python -m twine check dist/*
       - name: Upload distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-package-distributions
           path: dist/
@@ -53,7 +53,7 @@ jobs:
       id-token: write  # trusted publishing (OIDC), no PYPI_TOKEN needed
     steps:
       - name: Download distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-package-distributions
           path: dist/
