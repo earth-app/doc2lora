@@ -81,6 +81,75 @@ def cli():
     type=click.Choice(["cuda", "mps", "cpu", "auto"], case_sensitive=False),
     help="Device to use for training (auto-detects by default)",
 )
+@click.option(
+    "--attn-implementation",
+    default=None,
+    type=click.Choice(["sdpa", "flash_attention_2", "eager"], case_sensitive=False),
+    help="Attention kernel (sdpa auto-picked; flash_attention_2 is CUDA-only)",
+)
+@click.option(
+    "--group-by-length/--no-group-by-length",
+    default=None,
+    help="Length-grouped batching (auto-on at batch>=2; force on/off here)",
+)
+@click.option(
+    "--dataloader-num-workers",
+    default=None,
+    type=int,
+    help="DataLoader worker processes (default in-process; raise on Linux/CUDA)",
+)
+@click.option(
+    "--torch-compile/--no-torch-compile",
+    default=None,
+    help="torch.compile: auto-on for CUDA + large corpora; force on/off here",
+)
+@click.option(
+    "--optim",
+    default=None,
+    help="Override optimizer (default: fused AdamW on CUDA, else adamw_torch)",
+)
+@click.option(
+    "--audio-backend",
+    default="faster-whisper",
+    type=click.Choice(
+        ["faster-whisper", "openai-whisper", "speech_recognition", "auto"],
+        case_sensitive=False,
+    ),
+    help="Speech-to-text backend for audio/video (default: faster-whisper)",
+)
+@click.option(
+    "--whisper-model",
+    default="base",
+    help="Whisper model size for the whisper backends (tiny..large-v3)",
+)
+@click.option(
+    "--ocr-languages",
+    default="eng",
+    help="Tesseract language code(s) for image/video OCR (e.g. eng, eng+fra)",
+)
+@click.option(
+    "--video-frame-interval",
+    default=1.0,
+    type=float,
+    help="Seconds between sampled video frames for on-screen-text OCR",
+)
+@click.option(
+    "--max-workers",
+    default=None,
+    type=int,
+    help="Thread-pool size for parsing the documents directory (default: auto)",
+)
+@click.option(
+    "--chunk/--no-chunk",
+    default=True,
+    help="Split docs longer than --max-length into multiple examples vs truncate",
+)
+@click.option(
+    "--chunk-overlap",
+    default=0,
+    type=int,
+    help="Token overlap between consecutive chunks (default 0)",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def convert_cmd(
     documents_path: str,
@@ -98,6 +167,18 @@ def convert_cmd(
     gradient_checkpointing: bool,
     load_in_4bit: bool,
     device: Optional[str],
+    attn_implementation: Optional[str],
+    group_by_length: Optional[bool],
+    dataloader_num_workers: Optional[int],
+    torch_compile: Optional[bool],
+    optim: Optional[str],
+    audio_backend: str,
+    whisper_model: str,
+    ocr_languages: str,
+    video_frame_interval: float,
+    max_workers: Optional[int],
+    chunk: bool,
+    chunk_overlap: int,
     verbose: bool,
 ):
     """Convert a folder of documents to LoRA adapter format."""
@@ -124,6 +205,18 @@ def convert_cmd(
             gradient_checkpointing=gradient_checkpointing,
             load_in_4bit=load_in_4bit,
             device=None if device == "auto" else device,
+            attn_implementation=attn_implementation,
+            group_by_length=group_by_length,
+            dataloader_num_workers=dataloader_num_workers,
+            torch_compile=torch_compile,
+            optim=optim,
+            audio_backend=audio_backend,
+            whisper_model_size=whisper_model,
+            ocr_languages=ocr_languages,
+            video_frame_interval=video_frame_interval,
+            max_workers=max_workers,
+            chunk_long_documents=chunk,
+            chunk_overlap=chunk_overlap,
         )
 
         click.echo(f"✅ LoRA adapter successfully created at: {adapter_path}")
@@ -200,7 +293,16 @@ def formats():
         (".tex", "LaTeX files"),
         (
             "audio",
-            "Speech-to-text (.wav, .mp3, .m4a, .flac, .aac, .ogg, ...)",
+            "Speech-to-text via whisper (.wav, .mp3, .m4a, .flac, .aac, .ogg, ...)",
+        ),
+        (
+            "images",
+            "OCR text recognition (.png, .jpg, .bmp, .gif, .tiff, .webp, ...)",
+        ),
+        (".svg", "Vector image text extracted from markup (no OCR)"),
+        (
+            "video",
+            "Audio transcript + on-screen-text OCR (.mp4, .avi, .mov, .mkv, ...)",
         ),
         (
             "source code",
@@ -309,6 +411,75 @@ def formats():
     "--env-file",
     help="Path to .env file containing R2 credentials",
 )
+@click.option(
+    "--attn-implementation",
+    default=None,
+    type=click.Choice(["sdpa", "flash_attention_2", "eager"], case_sensitive=False),
+    help="Attention kernel (sdpa auto-picked; flash_attention_2 is CUDA-only)",
+)
+@click.option(
+    "--group-by-length/--no-group-by-length",
+    default=None,
+    help="Length-grouped batching (auto-on at batch>=2; force on/off here)",
+)
+@click.option(
+    "--dataloader-num-workers",
+    default=None,
+    type=int,
+    help="DataLoader worker processes (default in-process; raise on Linux/CUDA)",
+)
+@click.option(
+    "--torch-compile/--no-torch-compile",
+    default=None,
+    help="torch.compile: auto-on for CUDA + large corpora; force on/off here",
+)
+@click.option(
+    "--optim",
+    default=None,
+    help="Override optimizer (default: fused AdamW on CUDA, else adamw_torch)",
+)
+@click.option(
+    "--audio-backend",
+    default="faster-whisper",
+    type=click.Choice(
+        ["faster-whisper", "openai-whisper", "speech_recognition", "auto"],
+        case_sensitive=False,
+    ),
+    help="Speech-to-text backend for audio/video (default: faster-whisper)",
+)
+@click.option(
+    "--whisper-model",
+    default="base",
+    help="Whisper model size for the whisper backends (tiny..large-v3)",
+)
+@click.option(
+    "--ocr-languages",
+    default="eng",
+    help="Tesseract language code(s) for image/video OCR (e.g. eng, eng+fra)",
+)
+@click.option(
+    "--video-frame-interval",
+    default=1.0,
+    type=float,
+    help="Seconds between sampled video frames for on-screen-text OCR",
+)
+@click.option(
+    "--max-workers",
+    default=None,
+    type=int,
+    help="Thread-pool size for parsing the downloaded files (default: auto)",
+)
+@click.option(
+    "--chunk/--no-chunk",
+    default=True,
+    help="Split docs longer than --max-length into multiple examples vs truncate",
+)
+@click.option(
+    "--chunk-overlap",
+    default=0,
+    type=int,
+    help="Token overlap between consecutive chunks (default 0)",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def convert_r2(
     bucket_name: str,
@@ -332,6 +503,18 @@ def convert_r2(
     endpoint_url: str,
     region_name: str,
     env_file: str,
+    attn_implementation: Optional[str],
+    group_by_length: Optional[bool],
+    dataloader_num_workers: Optional[int],
+    torch_compile: Optional[bool],
+    optim: Optional[str],
+    audio_backend: str,
+    whisper_model: str,
+    ocr_languages: str,
+    video_frame_interval: float,
+    max_workers: Optional[int],
+    chunk: bool,
+    chunk_overlap: int,
     verbose: bool,
 ):
     """Convert documents from an R2 bucket to LoRA adapter format."""
@@ -408,6 +591,18 @@ def convert_r2(
             gradient_checkpointing=gradient_checkpointing,
             load_in_4bit=load_in_4bit,
             device=None if device == "auto" else device,
+            attn_implementation=attn_implementation,
+            group_by_length=group_by_length,
+            dataloader_num_workers=dataloader_num_workers,
+            torch_compile=torch_compile,
+            optim=optim,
+            audio_backend=audio_backend,
+            whisper_model_size=whisper_model,
+            ocr_languages=ocr_languages,
+            video_frame_interval=video_frame_interval,
+            max_workers=max_workers,
+            chunk_long_documents=chunk,
+            chunk_overlap=chunk_overlap,
             aws_access_key_id=r2_access_key_id,
             aws_secret_access_key=r2_secret_access_key,
             endpoint_url=endpoint_url,
