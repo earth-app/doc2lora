@@ -1,9 +1,11 @@
 """Document parsers for various file formats."""
 
+import bz2
 import csv
+import gzip
 import json
 import logging
-import os
+import lzma
 import tarfile
 import tempfile
 import xml.etree.ElementTree as ET
@@ -12,9 +14,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    import PyPDF2
+    # pypdf is the maintained successor to PyPDF2; fall back for older installs
+    from pypdf import PdfReader
 except ImportError:
-    PyPDF2 = None
+    try:
+        from PyPDF2 import PdfReader
+    except ImportError:
+        PdfReader = None
 
 try:
     from docx import Document
@@ -36,25 +42,139 @@ try:
 except ImportError:
     openpyxl = None
 
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
+
+try:
+    from odf import table as odf_table
+    from odf import teletype as odf_teletype
+    from odf import text as odf_text
+    from odf.opendocument import load as odf_load
+except ImportError:
+    odf_load = None
+
+try:
+    from striprtf.striprtf import rtf_to_text
+except ImportError:
+    rtf_to_text = None
+
+try:
+    import ebooklib
+    from ebooklib import epub
+except ImportError:
+    epub = None
+
+try:
+    import py7zr
+except ImportError:
+    py7zr = None
+
+try:
+    import speech_recognition as sr
+except ImportError:
+    sr = None
+
+try:
+    from pydub import AudioSegment
+except ImportError:
+    AudioSegment = None
+
 logger = logging.getLogger(__name__)
 
 
 class DocumentParser:
     """Parser for various document formats."""
 
-    SUPPORTED_EXTENSIONS = {
-        ".md",
-        ".txt",
-        ".pdf",
-        ".html",
-        ".docx",
-        ".csv",
-        ".json",
-        ".yaml",
-        ".yml",
-        ".xml",
-        ".tex",
-        ".xlsx",
+    # plaintext-ish documents read verbatim
+    TEXT_EXTENSIONS = {".txt", ".rst"}
+
+    # source code read as plaintext (niche/example corpora)
+    CODE_EXTENSIONS = {
+        ".py",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+        ".java",
+        ".kt",
+        ".kts",
+        ".rs",
+        ".c",
+        ".h",
+        ".cpp",
+        ".hpp",
+        ".cc",
+        ".go",
+        ".rb",
+        ".php",
+        ".swift",
+        ".dart",
+        ".scala",
+        ".sh",
+        ".bash",
+        ".sql",
+        ".r",
+        ".m",
+        ".pl",
+        ".lua",
+        ".hs",
+        ".clj",
+        ".ex",
+        ".exs",
+        ".vue",
+        ".toml",
+        ".ini",
+        ".cfg",
+    }
+
+    # audio formats transcribed to text via speech-to-text
+    AUDIO_EXTENSIONS = {
+        ".wav",
+        ".aiff",
+        ".aif",
+        ".flac",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".ogg",
+        ".oga",
+        ".wma",
+        ".opus",
+    }
+
+    # speech_recognition reads these natively; others need pydub (+ ffmpeg) to convert
+    _NATIVE_AUDIO_EXTENSIONS = {".wav", ".aiff", ".aif", ".flac"}
+
+    # extensions of files that can be parsed (and extracted out of archives)
+    DOCUMENT_EXTENSIONS = (
+        {
+            ".md",
+            ".pdf",
+            ".html",
+            ".docx",
+            ".csv",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".xml",
+            ".tex",
+            ".xlsx",
+            ".pptx",
+            ".odt",
+            ".ods",
+            ".rtf",
+            ".epub",
+            ".ipynb",
+        }
+        | TEXT_EXTENSIONS
+        | CODE_EXTENSIONS
+        | AUDIO_EXTENSIONS
+    )
+
+    # archive containers (extracted, not parsed directly); never recursed into each other
+    ARCHIVE_EXTENSIONS = {
         ".zip",
         ".tar",
         ".tar.gz",
@@ -63,23 +183,13 @@ class DocumentParser:
         ".tgz",
         ".tbz2",
         ".txz",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
     }
 
-    # Extensions of files that can be contained within archives
-    DOCUMENT_EXTENSIONS = {
-        ".md",
-        ".txt",
-        ".pdf",
-        ".html",
-        ".docx",
-        ".csv",
-        ".json",
-        ".yaml",
-        ".yml",
-        ".xml",
-        ".tex",
-        ".xlsx",
-    }
+    SUPPORTED_EXTENSIONS = DOCUMENT_EXTENSIONS | ARCHIVE_EXTENSIONS
 
     def __init__(self):
         """Initialize the document parser."""
@@ -89,16 +199,30 @@ class DocumentParser:
         """Check if optional dependencies are available."""
         missing_deps = []
 
-        if PyPDF2 is None:
-            missing_deps.append("PyPDF2 (for PDF support)")
+        if PdfReader is None:
+            missing_deps.append("pypdf (for PDF support)")
         if Document is None:
             missing_deps.append("python-docx (for DOCX support)")
         if BeautifulSoup is None:
-            missing_deps.append("beautifulsoup4 (for HTML support)")
+            missing_deps.append("beautifulsoup4 (for HTML/EPUB support)")
         if yaml is None:
             missing_deps.append("pyyaml (for YAML support)")
         if openpyxl is None:
             missing_deps.append("openpyxl (for XLSX support)")
+        if Presentation is None:
+            missing_deps.append("python-pptx (for PPTX support)")
+        if odf_load is None:
+            missing_deps.append("odfpy (for ODT/ODS support)")
+        if rtf_to_text is None:
+            missing_deps.append("striprtf (for RTF support)")
+        if epub is None:
+            missing_deps.append("EbookLib (for EPUB support)")
+        if py7zr is None:
+            missing_deps.append("py7zr (for 7z archive support)")
+        if sr is None:
+            missing_deps.append("SpeechRecognition (for audio transcription)")
+        if AudioSegment is None:
+            missing_deps.append("pydub+ffmpeg (for non-wav audio transcription)")
 
         if missing_deps:
             logger.warning(f"Missing optional dependencies: {', '.join(missing_deps)}")
@@ -121,9 +245,8 @@ class DocumentParser:
 
         # Recursively find all supported files
         for file_path in directory_path.rglob("*"):
-            if (
-                file_path.is_file()
-                and file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
+            if file_path.is_file() and self._resolve_extension(file_path) in (
+                self.SUPPORTED_EXTENSIONS
             ):
                 try:
                     doc = self.parse_file(file_path, base_path=directory_path)
@@ -134,6 +257,17 @@ class DocumentParser:
                     continue
 
         return documents
+
+    def _resolve_extension(self, file_path: Path) -> str:
+        """Resolve an extension, accounting for compound tar suffixes."""
+        name = file_path.name.lower()
+        if name.endswith((".tar.gz", ".tgz")):
+            return ".tar.gz"
+        if name.endswith((".tar.bz2", ".tbz2")):
+            return ".tar.bz2"
+        if name.endswith((".tar.xz", ".txz")):
+            return ".tar.xz"
+        return file_path.suffix.lower()
 
     def parse_file(
         self, file_path: Path, base_path: Optional[Path] = None
@@ -148,51 +282,21 @@ class DocumentParser:
         Returns:
             Parsed document with metadata or None if parsing failed
         """
-        extension = file_path.suffix.lower()
-
-        # Handle compound extensions for tar files
-        if file_path.name.lower().endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
-            if file_path.name.lower().endswith(
-                ".tar.gz"
-            ) or file_path.name.lower().endswith(".tgz"):
-                extension = ".tar.gz"
-            elif file_path.name.lower().endswith(
-                ".tar.bz2"
-            ) or file_path.name.lower().endswith(".tbz2"):
-                extension = ".tar.bz2"
-            elif file_path.name.lower().endswith(
-                ".tar.xz"
-            ) or file_path.name.lower().endswith(".txz"):
-                extension = ".tar.xz"
+        extension = self._resolve_extension(file_path)
 
         try:
-            if extension == ".md":
-                content = self._parse_markdown(file_path)
-            elif extension == ".txt" or extension == "":
-                content = self._parse_text(file_path)
-            elif extension == ".pdf":
-                content = self._parse_pdf(file_path)
-            elif extension == ".html":
-                content = self._parse_html(file_path)
-            elif extension == ".docx":
-                content = self._parse_docx(file_path)
-            elif extension == ".csv":
-                content = self._parse_csv(file_path)
-            elif extension == ".json":
-                content = self._parse_json(file_path)
-            elif extension in [".yaml", ".yml"]:
-                content = self._parse_yaml(file_path)
-            elif extension == ".xml":
-                content = self._parse_xml(file_path)
-            elif extension == ".xlsx":
-                content = self._parse_xlsx(file_path)
-            elif extension == ".tex":
-                content = self._parse_latex(file_path)
-            elif extension == ".zip":
+            if extension == ".zip":
                 content = self._parse_zip(file_path)
-            elif extension in [".tar", ".tar.gz", ".tar.bz2", ".tar.xz"]:
+            elif extension in (".tar", ".tar.gz", ".tar.bz2", ".tar.xz"):
                 content = self._parse_tar(file_path)
+            elif extension == ".7z":
+                content = self._parse_7z(file_path)
+            elif extension in (".gz", ".bz2", ".xz"):
+                content = self._parse_compressed(file_path)
             else:
+                content = self._content_for_extension(file_path, extension)
+
+            if content is None:
                 logger.warning(f"Unsupported file type: {extension}")
                 return None
 
@@ -244,25 +348,72 @@ class DocumentParser:
             logger.error(f"Error parsing {file_path}: {e}")
             return None
 
+    def _content_for_extension(self, file_path: Path, extension: str) -> Optional[str]:
+        """Dispatch a single (already-resolved) document extension to its parser."""
+        if extension == ".md":
+            return self._parse_markdown(file_path)
+        if (
+            extension == ""
+            or extension in self.TEXT_EXTENSIONS
+            or extension in self.CODE_EXTENSIONS
+        ):
+            return self._parse_text(file_path)
+        if extension == ".tex":
+            return self._parse_latex(file_path)
+        if extension == ".pdf":
+            return self._parse_pdf(file_path)
+        if extension == ".html":
+            return self._parse_html(file_path)
+        if extension == ".docx":
+            return self._parse_docx(file_path)
+        if extension == ".csv":
+            return self._parse_csv(file_path)
+        if extension == ".json":
+            return self._parse_json(file_path)
+        if extension == ".ipynb":
+            return self._parse_ipynb(file_path)
+        if extension in (".yaml", ".yml"):
+            return self._parse_yaml(file_path)
+        if extension == ".xml":
+            return self._parse_xml(file_path)
+        if extension == ".xlsx":
+            return self._parse_xlsx(file_path)
+        if extension == ".pptx":
+            return self._parse_pptx(file_path)
+        if extension == ".odt":
+            return self._parse_odt(file_path)
+        if extension == ".ods":
+            return self._parse_ods(file_path)
+        if extension == ".rtf":
+            return self._parse_rtf(file_path)
+        if extension == ".epub":
+            return self._parse_epub(file_path)
+        if extension in self.AUDIO_EXTENSIONS:
+            return self._parse_audio(file_path)
+        return None
+
     def _parse_markdown(self, file_path: Path) -> str:
         """Parse Markdown file."""
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return self._parse_text(file_path)
 
     def _parse_text(self, file_path: Path) -> str:
-        """Parse text file."""
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        """Parse text/code file; skip gracefully if it is not utf-8 decodable."""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except UnicodeDecodeError:
+            logger.warning(f"Skipping non-text (binary?) file: {file_path}")
+            return ""
 
     def _parse_pdf(self, file_path: Path) -> str:
         """Parse PDF file."""
-        if PyPDF2 is None:
-            logger.error("PyPDF2 not installed. Cannot parse PDF files.")
+        if PdfReader is None:
+            logger.error("pypdf/PyPDF2 not installed. Cannot parse PDF files.")
             return ""
 
         text = ""
         with open(file_path, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
+            reader = PdfReader(f)
             for page in reader.pages:
                 text += page.extract_text() + "\n"
         return text
@@ -303,6 +454,24 @@ class DocumentParser:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return json.dumps(data, indent=2)
+
+    def _parse_ipynb(self, file_path: Path) -> str:
+        """Parse a Jupyter notebook; join markdown and code cells."""
+        with open(file_path, "r", encoding="utf-8") as f:
+            notebook = json.load(f)
+
+        parts = []
+        for cell in notebook.get("cells", []):
+            source = cell.get("source", "")
+            if isinstance(source, list):
+                source = "".join(source)
+            if not source.strip():
+                continue
+            if cell.get("cell_type") == "code":
+                parts.append(f"```\n{source}\n```")
+            else:
+                parts.append(source)
+        return "\n\n".join(parts)
 
     def _parse_yaml(self, file_path: Path) -> str:
         """Parse YAML file."""
@@ -351,10 +520,158 @@ class DocumentParser:
             logger.error(f"Error parsing XLSX file {file_path}: {e}")
             return ""
 
+    def _parse_pptx(self, file_path: Path) -> str:
+        """Parse a PowerPoint (PPTX) file; slide text plus speaker notes."""
+        if Presentation is None:
+            logger.error("python-pptx not installed. Cannot parse PPTX files.")
+            return ""
+
+        try:
+            prs = Presentation(str(file_path))
+            parts = []
+            for index, slide in enumerate(prs.slides, start=1):
+                parts.append(f"Slide {index}")
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        for paragraph in shape.text_frame.paragraphs:
+                            line = "".join(run.text for run in paragraph.runs)
+                            if line.strip():
+                                parts.append(line)
+                if slide.has_notes_slide:
+                    notes = slide.notes_slide.notes_text_frame.text
+                    if notes.strip():
+                        parts.append(f"[notes] {notes}")
+                parts.append("")
+            return "\n".join(parts)
+        except Exception as e:
+            logger.error(f"Error parsing PPTX file {file_path}: {e}")
+            return ""
+
+    def _parse_odt(self, file_path: Path) -> str:
+        """Parse an OpenDocument text (ODT) file."""
+        if odf_load is None:
+            logger.error("odfpy not installed. Cannot parse ODT files.")
+            return ""
+
+        try:
+            doc = odf_load(str(file_path))
+            paragraphs = doc.getElementsByType(odf_text.P)
+            return "\n".join(odf_teletype.extractText(p) for p in paragraphs)
+        except Exception as e:
+            logger.error(f"Error parsing ODT file {file_path}: {e}")
+            return ""
+
+    def _parse_ods(self, file_path: Path) -> str:
+        """Parse an OpenDocument spreadsheet (ODS) file."""
+        if odf_load is None:
+            logger.error("odfpy not installed. Cannot parse ODS files.")
+            return ""
+
+        try:
+            doc = odf_load(str(file_path))
+            parts = []
+            for table in doc.getElementsByType(odf_table.Table):
+                parts.append(f"Sheet: {table.getAttribute('name')}")
+                for row in table.getElementsByType(odf_table.TableRow):
+                    cells = [
+                        odf_teletype.extractText(cell)
+                        for cell in row.getElementsByType(odf_table.TableCell)
+                    ]
+                    cells = [c for c in cells if c]
+                    if cells:
+                        parts.append("\t".join(cells))
+                parts.append("")
+            return "\n".join(parts)
+        except Exception as e:
+            logger.error(f"Error parsing ODS file {file_path}: {e}")
+            return ""
+
+    def _parse_rtf(self, file_path: Path) -> str:
+        """Parse a Rich Text Format (RTF) file."""
+        if rtf_to_text is None:
+            logger.error("striprtf not installed. Cannot parse RTF files.")
+            return ""
+
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return rtf_to_text(f.read())
+        except Exception as e:
+            logger.error(f"Error parsing RTF file {file_path}: {e}")
+            return ""
+
+    def _parse_epub(self, file_path: Path) -> str:
+        """Parse an EPUB e-book; extract chapter text."""
+        if epub is None or BeautifulSoup is None:
+            logger.error("EbookLib/beautifulsoup4 not installed. Cannot parse EPUB.")
+            return ""
+
+        try:
+            book = epub.read_epub(str(file_path))
+            parts = []
+            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                soup = BeautifulSoup(item.get_content(), "html.parser")
+                text = soup.get_text()
+                if text.strip():
+                    parts.append(text)
+            return "\n".join(parts)
+        except Exception as e:
+            logger.error(f"Error parsing EPUB file {file_path}: {e}")
+            return ""
+
+    def _parse_audio(self, file_path: Path) -> str:
+        """Transcribe an audio file to text via speech-to-text.
+
+        WAV/AIFF/FLAC are read natively; other formats (mp3, m4a, aac, ogg, ...)
+        are converted to wav first with pydub (which needs the ffmpeg binary).
+        """
+        if sr is None:
+            logger.error(
+                "SpeechRecognition not installed. Cannot transcribe audio files."
+            )
+            return ""
+
+        extension = file_path.suffix.lower()
+        tmp_wav: Optional[Path] = None
+
+        try:
+            if extension in self._NATIVE_AUDIO_EXTENSIONS:
+                audio_path = file_path
+            else:
+                if AudioSegment is None:
+                    logger.error(
+                        f"pydub (+ ffmpeg) needed to transcribe '{extension}' audio."
+                    )
+                    return ""
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+                    tmp_wav = Path(handle.name)
+                AudioSegment.from_file(str(file_path)).export(
+                    str(tmp_wav), format="wav"
+                )
+                audio_path = tmp_wav
+
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(str(audio_path)) as source:
+                audio = recognizer.record(source)
+
+            try:
+                return recognizer.recognize_google(audio)
+            except sr.UnknownValueError:
+                logger.warning(f"Speech not understood in audio: {file_path}")
+                return ""
+            except sr.RequestError as e:
+                logger.error(f"Speech-to-text request failed for {file_path}: {e}")
+                return ""
+
+        except Exception as e:
+            logger.error(f"Error transcribing audio {file_path}: {e}")
+            return ""
+        finally:
+            if tmp_wav is not None:
+                tmp_wav.unlink(missing_ok=True)
+
     def _parse_latex(self, file_path: Path) -> str:
         """Parse LaTeX file."""
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return self._parse_text(file_path)
 
     def _parse_zip(self, file_path: Path) -> str:
         """Parse ZIP archive by extracting and parsing supported documents."""
@@ -369,8 +686,6 @@ class DocumentParser:
 
                 # Create a temporary directory to extract files
                 with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
-
                     for file_info in zip_ref.infolist():
                         # Skip directories and hidden files
                         if file_info.is_dir() or file_info.filename.startswith("."):
@@ -484,38 +799,83 @@ class DocumentParser:
 
         return "\n".join(content_parts)
 
+    def _parse_7z(self, file_path: Path) -> str:
+        """Parse a 7z archive by extracting and parsing supported documents."""
+        if py7zr is None:
+            logger.error("py7zr not installed. Cannot parse 7z archives.")
+            return ""
+
+        content_parts = [f"=== 7z Archive: {file_path.name} ==="]
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with py7zr.SevenZipFile(file_path, "r") as archive:
+                    archive.extractall(path=temp_dir)
+
+                temp_path = Path(temp_dir)
+                for extracted_file in sorted(temp_path.rglob("*")):
+                    if not extracted_file.is_file():
+                        continue
+                    if extracted_file.name.startswith("."):
+                        continue
+                    if extracted_file.suffix.lower() not in self.DOCUMENT_EXTENSIONS:
+                        content_parts.append(
+                            f"  • {extracted_file.name} (unsupported format)"
+                        )
+                        continue
+
+                    rel = extracted_file.relative_to(temp_path)
+                    parsed_doc = self._parse_extracted_file(extracted_file, str(rel))
+                    if parsed_doc:
+                        content_parts.append(f"\n--- File: {rel} ---")
+                        content_parts.append(parsed_doc)
+
+        except Exception as e:
+            logger.error(f"Error reading 7z file {file_path}: {e}")
+            return f"Error reading 7z file: {e}"
+
+        return "\n".join(content_parts)
+
+    def _parse_compressed(self, file_path: Path) -> str:
+        """Decompress a single-file .gz/.bz2/.xz and parse its inner document."""
+        name = file_path.name.lower()
+        if name.endswith(".gz"):
+            opener = gzip.open
+        elif name.endswith(".bz2"):
+            opener = bz2.open
+        elif name.endswith(".xz"):
+            opener = lzma.open
+        else:
+            return ""
+
+        # inner filename is the name minus the compression suffix
+        inner_name = file_path.name[: -(len(file_path.suffix))]
+        inner_ext = Path(inner_name).suffix.lower()
+
+        try:
+            with opener(file_path, "rb") as f:
+                data = f.read()
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                inner_path = Path(temp_dir) / (inner_name or "decompressed.txt")
+                inner_path.write_bytes(data)
+                # treat unknown inner extensions as plaintext
+                if inner_ext not in self.DOCUMENT_EXTENSIONS:
+                    return self._parse_text(inner_path)
+                parsed = self._parse_extracted_file(inner_path, inner_name)
+                return parsed or ""
+        except Exception as e:
+            logger.error(f"Error reading compressed file {file_path}: {e}")
+            return f"Error reading compressed file: {e}"
+
     def _parse_extracted_file(
         self, file_path: Path, original_name: str
     ) -> Optional[str]:
-        """Parse an extracted file from an archive."""
+        """Parse an extracted file from an archive (no nested archive recursion)."""
         extension = file_path.suffix.lower()
 
         try:
-            if extension == ".md":
-                return self._parse_markdown(file_path)
-            elif extension == ".txt":
-                return self._parse_text(file_path)
-            elif extension == ".pdf":
-                return self._parse_pdf(file_path)
-            elif extension == ".html":
-                return self._parse_html(file_path)
-            elif extension == ".docx":
-                return self._parse_docx(file_path)
-            elif extension == ".csv":
-                return self._parse_csv(file_path)
-            elif extension == ".json":
-                return self._parse_json(file_path)
-            elif extension in [".yaml", ".yml"]:
-                return self._parse_yaml(file_path)
-            elif extension == ".xml":
-                return self._parse_xml(file_path)
-            elif extension == ".xlsx":
-                return self._parse_xlsx(file_path)
-            elif extension == ".tex":
-                return self._parse_latex(file_path)
-            else:
-                return None
-
+            return self._content_for_extension(file_path, extension)
         except Exception as e:
             logger.warning(f"Error parsing extracted file {original_name}: {e}")
             return None
