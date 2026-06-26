@@ -1,5 +1,6 @@
 """LoRA trainer for fine-tuning language models."""
 
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -9,7 +10,12 @@ try:
     import numpy as np
     import torch
     from datasets import Dataset
-    from peft import LoraConfig, TaskType, get_peft_model
+    from peft import (
+        LoraConfig,
+        TaskType,
+        get_peft_model,
+        prepare_model_for_kbit_training,
+    )
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -22,6 +28,22 @@ except ImportError as e:
     raise ImportError(
         "Please install required dependencies: torch, transformers, peft, datasets"
     )
+
+# optional 4-bit QLoRA path (cuda only)
+try:
+    from transformers import BitsAndBytesConfig
+except ImportError:
+    BitsAndBytesConfig = None
+
+try:
+    import bitsandbytes as _bnb  # noqa: F401
+
+    _HAS_BITSANDBYTES = True
+except ImportError:
+    _HAS_BITSANDBYTES = False
+
+# Cloudflare Workers AI accepts BYO LoRA adapters up to rank 32 (300MB safetensors)
+CLOUDFLARE_MAX_RANK = 32
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +85,8 @@ class LoRATrainer:
         lora_dropout: float = 0.1,
         target_modules: Optional[List[str]] = None,
         device: Optional[str] = None,
+        gradient_checkpointing: bool = True,
+        load_in_4bit: bool = False,
     ):
         """
         Initialize the LoRA trainer.
@@ -70,11 +94,13 @@ class LoRATrainer:
         Args:
             model_name: Name of the base model to fine-tune
             max_length: Maximum sequence length for tokenization
-            lora_r: LoRA rank parameter (max 8 for Cloudflare Workers AI compatibility)
+            lora_r: LoRA rank parameter (Cloudflare Workers AI supports up to 32)
             lora_alpha: LoRA alpha parameter
             lora_dropout: LoRA dropout rate
             target_modules: Target modules for LoRA adaptation
             device: Device to use for training ('cuda', 'mps', 'cpu', or None for auto-detection)
+            gradient_checkpointing: Trade compute for memory (helps on low-RAM machines)
+            load_in_4bit: Use 4-bit QLoRA (requires bitsandbytes + CUDA; ignored otherwise)
         """
         self.model_name = model_name
         self.max_length = max_length
@@ -82,12 +108,21 @@ class LoRATrainer:
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
         self.target_modules = target_modules  # Will be auto-detected if None
+        self.gradient_checkpointing = gradient_checkpointing
+        self.load_in_4bit = load_in_4bit
+        self.use_bf16 = False  # resolved in _load_model
 
         # Warn about LoRA rank limit for Cloudflare Workers AI
-        if lora_r > 8:
+        if lora_r > CLOUDFLARE_MAX_RANK:
             logger.warning(
-                f"⚠️  LoRA rank {lora_r} exceeds Cloudflare Workers AI limit of 8. "
-                f"Consider using --lora-r 8 for compatibility."
+                f"⚠️  LoRA rank {lora_r} exceeds Cloudflare Workers AI limit of "
+                f"{CLOUDFLARE_MAX_RANK}. Consider --lora-r {CLOUDFLARE_MAX_RANK} or "
+                f"lower for compatibility."
+            )
+        elif lora_r > 8:
+            logger.info(
+                f"ℹ️  LoRA rank {lora_r} (>8) needs Cloudflare's higher-rank runtime "
+                f"and keeps the adapter under the 300MB file limit."
             )
 
         # Detect and set device
@@ -119,39 +154,61 @@ class LoRATrainer:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Determine dtype and device mapping based on available device
+        is_cuda = self.device.type == "cuda"
         is_gpu_available = self.device.type in ["cuda", "mps"]
 
+        # resolve 4-bit QLoRA availability (cuda + bitsandbytes only)
+        if self.load_in_4bit and not (
+            is_cuda and _HAS_BITSANDBYTES and BitsAndBytesConfig is not None
+        ):
+            logger.warning(
+                "⚠️  4-bit QLoRA requires CUDA + bitsandbytes; falling back to "
+                "standard LoRA"
+            )
+            self.load_in_4bit = False
+
+        # prefer bf16 on capable CUDA hardware, else fp16 on gpu, else fp32
+        self.use_bf16 = is_cuda and torch.cuda.is_bf16_supported()
         if is_gpu_available:
-            torch_dtype = torch.float16
-            # Avoid device_map="auto" for LoRA training to prevent meta tensor issues
-            device_map = None
-            logger.info(f"💾 Using {torch_dtype} precision for GPU training")
+            compute_dtype = torch.bfloat16 if self.use_bf16 else torch.float16
+            logger.info(f"💾 Using {compute_dtype} precision for GPU training")
         else:
-            torch_dtype = torch.float32
-            device_map = None
+            compute_dtype = torch.float32
             logger.info("💾 Using float32 precision for CPU training")
 
-        try:
-            # Load model with device-specific settings
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                torch_dtype=torch_dtype,
-                device_map=device_map,
-                low_cpu_mem_usage=True,
-                **auth_kwargs,
+        load_kwargs = {"low_cpu_mem_usage": True, **auth_kwargs}
+        if self.load_in_4bit:
+            load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=compute_dtype,
             )
+            load_kwargs["device_map"] = {"": 0}
+            logger.info("🧮 Using 4-bit QLoRA (nf4, double quantization)")
+        else:
+            load_kwargs["torch_dtype"] = compute_dtype
+            load_kwargs["device_map"] = None
 
-            # Move model to device
-            self.model = self.model.to(self.device)
+        def _load(**kwargs):
+            return AutoModelForCausalLM.from_pretrained(self.model_name, **kwargs)
+
+        try:
+            self.model = _load(**load_kwargs)
+            if not self.load_in_4bit:
+                self.model = self.model.to(self.device)
             logger.info(f"📱 Model loaded successfully on {self.device}")
-
-        except torch.cuda.OutOfMemoryError as e:
-            logger.warning(f"⚠️  GPU out of memory, falling back to CPU: {e}")
-            # Fallback to CPU
+        except Exception as e:  # includes torch.cuda.OutOfMemoryError
+            if self.device.type == "cpu":
+                logger.error(f"❌ Failed to load model on CPU: {e}")
+                raise
+            logger.warning(
+                f"⚠️  Could not load on {self.device}, falling back to CPU: {e}"
+            )
             self.device = torch.device("cpu")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
+            self.load_in_4bit = False
+            self.use_bf16 = False
+            self.model = _load(
                 torch_dtype=torch.float32,
                 device_map=None,
                 low_cpu_mem_usage=True,
@@ -160,22 +217,11 @@ class LoRATrainer:
             self.model = self.model.to(self.device)
             logger.info("💻 Successfully loaded model on CPU")
 
-        except Exception as e:
-            logger.error(f"❌ Failed to load model on {self.device}: {e}")
-            if self.device.type != "cpu":
-                logger.info("🔄 Attempting to load on CPU as fallback...")
-                self.device = torch.device("cpu")
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_name,
-                    torch_dtype=torch.float32,
-                    device_map=None,
-                    low_cpu_mem_usage=True,
-                    **auth_kwargs,
-                )
-                self.model = self.model.to(self.device)
-                logger.info("💻 Successfully loaded model on CPU")
-            else:
-                raise
+        # prepare for k-bit training (gradient checkpointing handled via Trainer)
+        if self.load_in_4bit:
+            self.model = prepare_model_for_kbit_training(
+                self.model, use_gradient_checkpointing=False
+            )
 
         # Auto-detect target modules if not provided
         if self.target_modules is None:
@@ -194,6 +240,14 @@ class LoRATrainer:
 
         # Apply LoRA to model
         self.peft_model = get_peft_model(self.model, lora_config)
+
+        # gradient checkpointing needs input grads enabled on the wrapped model
+        if self.gradient_checkpointing:
+            try:
+                self.peft_model.enable_input_require_grads()
+            except Exception as e:
+                logger.warning(f"Could not enable input require grads: {e}")
+
         self.peft_model.print_trainable_parameters()
 
         logger.info(f"✅ Model successfully loaded on {self.device}")
@@ -242,6 +296,7 @@ class LoRATrainer:
         num_epochs: Optional[int] = 3,
         max_steps: Optional[int] = None,
         learning_rate: float = 5e-4,
+        gradient_accumulation_steps: int = 1,
         output_dir: str = "./lora_training_output",
     ):
         """
@@ -253,6 +308,8 @@ class LoRATrainer:
             num_epochs: Number of training epochs (ignored if max_steps is set)
             max_steps: Maximum number of training steps (overrides num_epochs if set)
             learning_rate: Learning rate for training
+            gradient_accumulation_steps: Accumulate grads to emulate a larger batch
+                on low-memory machines (effective batch = batch_size * this)
             output_dir: Directory to save training outputs
         """
         logger.info("Starting LoRA training")
@@ -260,34 +317,53 @@ class LoRATrainer:
         # Prepare dataset
         dataset = self._prepare_dataset(documents)
 
-        # Training arguments
         # Prepare training arguments
+        is_cuda = self.device.type == "cuda"
         is_gpu_available = self.device.type in ["cuda", "mps"]
+
+        # scale warmup to the actual run length (fixed 100 over-warms tiny corpora)
+        effective_batch = max(1, batch_size * gradient_accumulation_steps)
+        steps_per_epoch = max(1, len(dataset) // effective_batch)
+        total_steps = max_steps or steps_per_epoch * (num_epochs or 3)
+        warmup_steps = min(100, max(0, total_steps // 10))
 
         training_kwargs = {
             "output_dir": output_dir,
             "per_device_train_batch_size": batch_size,
-            "gradient_accumulation_steps": 1,
-            "warmup_steps": 100,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "warmup_steps": warmup_steps,
             "learning_rate": learning_rate,
-            "fp16": is_gpu_available
-            and self.device.type == "cuda",  # Only use fp16 on CUDA
+            "bf16": self.use_bf16,
+            "fp16": is_cuda and not self.use_bf16,
             "logging_steps": 10,
             "save_strategy": "epoch" if max_steps is None else "steps",
             "remove_unused_columns": False,
             "dataloader_drop_last": True,
-            "report_to": None,
+            "report_to": [],
         }
 
+        # gradient checkpointing for 4-bit is handled in _load_model; let the
+        # Trainer own it for the standard path
+        if self.gradient_checkpointing and not self.load_in_4bit:
+            training_kwargs["gradient_checkpointing"] = True
+            training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+
         # Log training configuration
-        logger.info(f"🏋️  Training configuration:")
+        logger.info("🏋️  Training configuration:")
         logger.info(f"   Device: {self.device}")
-        logger.info(f"   Batch size: {batch_size}")
+        logger.info(
+            f"   Batch size: {batch_size} (accum x{gradient_accumulation_steps})"
+        )
         logger.info(f"   Learning rate: {learning_rate}")
-        logger.info(f"   FP16: {training_kwargs['fp16']}")
+        logger.info(
+            f"   Precision: {'bf16' if self.use_bf16 else ('fp16' if is_cuda else 'fp32')}"
+        )
+        logger.info(f"   Gradient checkpointing: {self.gradient_checkpointing}")
+        logger.info(f"   QLoRA (4-bit): {self.load_in_4bit}")
         if not is_gpu_available:
             logger.info(
-                "   ⚡ Tip: Training on CPU will be slower. Consider using a GPU for faster training."
+                "   ⚡ Tip: Training on CPU is slower. A GPU (or 4-bit QLoRA on "
+                "CUDA) speeds this up substantially."
             )
 
         # Set either epochs or max_steps
@@ -306,14 +382,20 @@ class LoRATrainer:
             tokenizer=self.tokenizer, mlm=False
         )
 
-        # Initialize trainer
-        trainer = Trainer(
-            model=self.peft_model,
-            args=training_args,
-            train_dataset=dataset,
-            tokenizer=self.tokenizer,
-            data_collator=data_collator,
-        )
+        # Initialize trainer; newer transformers renamed `tokenizer` ->
+        # `processing_class`, so pass whichever the installed version accepts
+        trainer_kwargs = {
+            "model": self.peft_model,
+            "args": training_args,
+            "train_dataset": dataset,
+            "data_collator": data_collator,
+        }
+        if "processing_class" in inspect.signature(Trainer.__init__).parameters:
+            trainer_kwargs["processing_class"] = self.tokenizer
+        else:
+            trainer_kwargs["tokenizer"] = self.tokenizer
+
+        trainer = Trainer(**trainer_kwargs)
 
         # Train the model
         trainer.train()
@@ -437,7 +519,7 @@ class LoRATrainer:
         Get the model_type required by Cloudflare Workers AI.
 
         Returns:
-            Model type string ("mistral", "gemma", or "llama")
+            Model type string ("mistral", "gemma", "llama", or "qwen")
         """
         model_name_lower = self.model_name.lower()
 
@@ -447,6 +529,9 @@ class LoRATrainer:
             return "gemma"
         elif "llama" in model_name_lower:
             return "llama"
+        elif "qwen" in model_name_lower or "qwq" in model_name_lower:
+            # QwQ / Qwen base models (e.g. @cf/qwen/qwq-32b)
+            return "qwen"
         else:
             # Default to mistral as it's the most common
             logger.warning(
@@ -475,6 +560,9 @@ class LoRATrainer:
             # Mistral models
             "mistral": ["q_proj", "k_proj", "v_proj", "o_proj"],
             "mistral-7b": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            # Qwen / QwQ models (Qwen2 attention projections)
+            "qwen": ["q_proj", "k_proj", "v_proj", "o_proj"],
+            "qwq": ["q_proj", "k_proj", "v_proj", "o_proj"],
             # T5 models
             "t5": ["q", "v"],
             # BERT models
