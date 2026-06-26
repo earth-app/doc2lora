@@ -74,28 +74,47 @@ def validate_documents_path(path: str) -> Path:
     return path_obj
 
 
+# rough training throughput (tokens/sec) for a small (~125-350M) model;
+# 7B-class models are roughly 20-40x slower, QLoRA on cuda recovers much of it
+DEVICE_TOKENS_PER_SEC = {"cuda": 8000, "mps": 1500, "cpu": 250}
+
+# approx characters per token for english-ish text
+CHARS_PER_TOKEN = 4
+
+
 def estimate_training_time(
-    num_documents: int, total_size_mb: float, batch_size: int = 4
+    num_documents: int,
+    total_size_mb: float,
+    batch_size: int = 4,
+    num_epochs: int = 3,
+    device: Optional[str] = None,
 ) -> str:
     """
-    Estimate training time based on document count and size.
+    Estimate training time from corpus size, epochs, and device throughput.
+
+    These are rough order-of-magnitude estimates for a small base model; real
+    wall-clock varies widely with model size, sequence length, and hardware.
 
     Args:
         num_documents: Number of documents to process
         total_size_mb: Total size of documents in MB
         batch_size: Training batch size
+        num_epochs: Number of training epochs
+        device: Target device ('cuda', 'mps', 'cpu'); defaults to conservative cpu
 
     Returns:
         Estimated training time as a string
     """
+    approx_tokens = (total_size_mb * 1024 * 1024) / CHARS_PER_TOKEN
+    dev = (device or "cpu").lower()
+    tokens_per_sec = DEVICE_TOKENS_PER_SEC.get(dev, DEVICE_TOKENS_PER_SEC["cpu"])
 
-    # Rough estimation based on empirical data
-    # These are very rough estimates and will vary significantly based on hardware
-    base_time_per_doc = 30  # seconds per document
-    size_factor = max(1, total_size_mb / 10)  # additional time for large documents
-    batch_factor = max(1, 4 / batch_size)  # batch size impact
+    epochs = num_epochs or 3
+    # larger batches help sublinearly (memory bandwidth bound)
+    batch_factor = max(1.0, float(batch_size)) ** 0.5
 
-    estimated_seconds = num_documents * base_time_per_doc * size_factor * batch_factor
+    estimated_seconds = (approx_tokens * epochs) / (tokens_per_sec * batch_factor)
+    estimated_seconds = max(5.0, estimated_seconds)  # floor for tiny corpora
 
     if estimated_seconds < 60:
         return f"{int(estimated_seconds)} seconds"
@@ -122,12 +141,20 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} TB"
 
 
-def create_training_summary(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+def create_training_summary(
+    documents: List[Dict[str, Any]],
+    batch_size: int = 4,
+    num_epochs: int = 3,
+    device: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Create a summary of the documents for training.
 
     Args:
         documents: List of parsed documents
+        batch_size: Training batch size (for the time estimate)
+        num_epochs: Number of epochs (for the time estimate)
+        device: Target device (for the time estimate)
 
     Returns:
         Summary dictionary with statistics
@@ -161,7 +188,11 @@ def create_training_summary(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         "file_types": file_types,
         "avg_content_length": int(avg_content_length),
         "estimated_training_time": estimate_training_time(
-            len(documents), total_size / (1024 * 1024)
+            len(documents),
+            total_size / (1024 * 1024),
+            batch_size=batch_size,
+            num_epochs=num_epochs,
+            device=device,
         ),
     }
 
