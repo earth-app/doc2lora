@@ -155,8 +155,8 @@ class TestDocumentParser(unittest.TestCase):
             zip_ref.writestr("notes.txt", "Important notes here.")
             # Add a JSON file
             zip_ref.writestr("config.json", '{"version": "1.0", "name": "test"}')
-            # Add an unsupported file
-            zip_ref.writestr("image.png", b"fake image data")
+            # Add an unsupported file (.bin is not a recognized document type)
+            zip_ref.writestr("data.bin", b"fake binary data")
 
         result = self.parser.parse_file(zip_file)
 
@@ -168,7 +168,7 @@ class TestDocumentParser(unittest.TestCase):
         self.assertIn("config.json", result["content"])
         self.assertIn("Test Documentation", result["content"])
         self.assertIn("Important notes here", result["content"])
-        self.assertIn("image.png (unsupported format)", result["content"])
+        self.assertIn("data.bin (unsupported format)", result["content"])
 
     def test_parse_tar_archive(self):
         """Test parsing TAR archives containing supported documents."""

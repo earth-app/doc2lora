@@ -184,10 +184,14 @@ def test_parse_epub(parser, temp_dir):
     assert "epub chapter body" in result["content"]
 
 
-def test_parse_audio_wav(parser, temp_dir, monkeypatch):
-    """A WAV file is transcribed via speech-to-text (recognizer mocked)."""
+def test_parse_audio_wav(temp_dir, monkeypatch):
+    """A WAV file is transcribed via the SpeechRecognition backend (mocked)."""
     sr = pytest.importorskip("speech_recognition")
     import wave
+
+    # pin the legacy backend so the test is deterministic regardless of which
+    # whisper backends are installed (faster-whisper is the default)
+    parser = DocumentParser(audio_backend="speech_recognition")
 
     wav = temp_dir / "clip.wav"
     with wave.open(str(wav), "wb") as w:
