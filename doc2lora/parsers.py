@@ -6,10 +6,13 @@ import gzip
 import json
 import logging
 import lzma
+import os
 import tarfile
 import tempfile
+import threading
 import xml.etree.ElementTree as ET
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -81,7 +84,42 @@ try:
 except ImportError:
     AudioSegment = None
 
+try:
+    import pytesseract
+    from PIL import Image
+
+    # surface the "binary not on PATH" error class even when mocked in tests
+    from pytesseract import TesseractNotFoundError
+except ImportError:
+    pytesseract = None
+    Image = None
+
+    class TesseractNotFoundError(Exception):  # fallback so `except` stays valid
+        """Raised when the tesseract-ocr binary is unavailable."""
+
+
+try:
+    # opencv decodes video frames for per-frame OCR
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    # faster-whisper: default audio/video speech-to-text backend (CTranslate2)
+    from faster_whisper import WhisperModel
+except ImportError:
+    WhisperModel = None
+
+try:
+    # openai-whisper: alternative speech-to-text backend (imports as `whisper`)
+    import whisper as openai_whisper
+except ImportError:
+    openai_whisper = None
+
 logger = logging.getLogger(__name__)
+
+# audio transcription backends, in default preference order
+AUDIO_BACKENDS = ("faster-whisper", "openai-whisper", "speech_recognition")
 
 
 class DocumentParser:
@@ -147,6 +185,39 @@ class DocumentParser:
     # speech_recognition reads these natively; others need pydub (+ ffmpeg) to convert
     _NATIVE_AUDIO_EXTENSIONS = {".wav", ".aiff", ".aif", ".flac"}
 
+    # raster images run through OCR (text recognition)
+    RASTER_IMAGE_EXTENSIONS = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".bmp",
+        ".gif",
+        ".tif",
+        ".tiff",
+        ".webp",
+        ".ppm",
+        ".pgm",
+    }
+
+    # svg is vector xml; embedded text is extracted from the markup (no OCR needed)
+    VECTOR_IMAGE_EXTENSIONS = {".svg"}
+
+    IMAGE_EXTENSIONS = RASTER_IMAGE_EXTENSIONS | VECTOR_IMAGE_EXTENSIONS
+
+    # video formats: audio track transcribed + on-screen text OCR'd per frame
+    VIDEO_EXTENSIONS = {
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".webm",
+        ".flv",
+        ".wmv",
+        ".mpeg",
+        ".mpg",
+        ".m4v",
+    }
+
     # extensions of files that can be parsed (and extracted out of archives)
     DOCUMENT_EXTENSIONS = (
         {
@@ -171,6 +242,8 @@ class DocumentParser:
         | TEXT_EXTENSIONS
         | CODE_EXTENSIONS
         | AUDIO_EXTENSIONS
+        | IMAGE_EXTENSIONS
+        | VIDEO_EXTENSIONS
     )
 
     # archive containers (extracted, not parsed directly); never recursed into each other
@@ -191,8 +264,35 @@ class DocumentParser:
 
     SUPPORTED_EXTENSIONS = DOCUMENT_EXTENSIONS | ARCHIVE_EXTENSIONS
 
-    def __init__(self):
-        """Initialize the document parser."""
+    def __init__(
+        self,
+        audio_backend: str = "faster-whisper",
+        whisper_model_size: str = "base",
+        ocr_languages: str = "eng",
+        video_frame_interval: float = 1.0,
+        max_workers: Optional[int] = None,
+    ):
+        """Initialize the document parser.
+
+        Args:
+            audio_backend: speech-to-text backend for audio/video; one of
+                "faster-whisper" (default), "openai-whisper", "speech_recognition"
+                or "auto". An unavailable backend falls back gracefully.
+            whisper_model_size: whisper model size for the whisper backends
+                ("tiny", "base", "small", "medium", "large-v3", ...)
+            ocr_languages: tesseract language code(s) for image/video OCR (e.g. "eng")
+            video_frame_interval: seconds between sampled frames for video OCR
+            max_workers: thread-pool size for parse_directory (None -> auto)
+        """
+        self.audio_backend = audio_backend
+        self.whisper_model_size = whisper_model_size
+        self.ocr_languages = ocr_languages
+        self.video_frame_interval = video_frame_interval
+        self.max_workers = max_workers
+        # lazily-loaded, reused transcription models (guarded by a lock)
+        self._fw_model: Any = None
+        self._ow_model: Any = None
+        self._model_lock = threading.Lock()
         self._check_dependencies()
 
     def _check_dependencies(self):
@@ -219,44 +319,95 @@ class DocumentParser:
             missing_deps.append("EbookLib (for EPUB support)")
         if py7zr is None:
             missing_deps.append("py7zr (for 7z archive support)")
-        if sr is None:
-            missing_deps.append("SpeechRecognition (for audio transcription)")
-        if AudioSegment is None:
-            missing_deps.append("pydub+ffmpeg (for non-wav audio transcription)")
+        if pytesseract is None or Image is None:
+            missing_deps.append("pytesseract+Pillow (for image OCR)")
+        if cv2 is None:
+            missing_deps.append("opencv-python (for video frame OCR)")
+        if WhisperModel is None and openai_whisper is None and sr is None:
+            missing_deps.append(
+                "faster-whisper/openai-whisper/SpeechRecognition "
+                "(for audio + video transcription)"
+            )
 
         if missing_deps:
             logger.warning(f"Missing optional dependencies: {', '.join(missing_deps)}")
 
-    def parse_directory(self, directory_path: str) -> List[Dict[str, Any]]:
+    def parse_directory(
+        self, directory_path: str, max_workers: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         Recursively parse all supported documents in a directory.
 
+        Files are parsed concurrently with a thread pool; parsing is largely I/O
+        and native-library bound (PDF, OCR, transcription), so threads overlap
+        well. The returned list is sorted by path for stable ordering regardless
+        of completion order.
+
         Args:
             directory_path: Path to the directory to scan
+            max_workers: Thread-pool size (None -> self.max_workers -> auto)
 
         Returns:
             List of parsed documents with metadata
         """
-        documents = []
         directory_path = Path(directory_path)
 
         if not directory_path.exists():
             raise FileNotFoundError(f"Directory not found: {directory_path}")
 
         # Recursively find all supported files
-        for file_path in directory_path.rglob("*"):
-            if file_path.is_file() and self._resolve_extension(file_path) in (
-                self.SUPPORTED_EXTENSIONS
-            ):
-                try:
-                    doc = self.parse_file(file_path, base_path=directory_path)
+        files = [
+            fp
+            for fp in directory_path.rglob("*")
+            if fp.is_file() and self._resolve_extension(fp) in self.SUPPORTED_EXTENSIONS
+        ]
+
+        workers = self._resolve_workers(
+            max_workers if max_workers is not None else self.max_workers, len(files)
+        )
+
+        documents: List[Dict[str, Any]] = []
+        if workers <= 1:
+            for file_path in files:
+                doc = self._safe_parse_file(file_path, directory_path)
+                if doc:
+                    documents.append(doc)
+        else:
+            logger.info(f"Parsing {len(files)} files with {workers} worker threads")
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [
+                    executor.submit(self._safe_parse_file, fp, directory_path)
+                    for fp in files
+                ]
+                for future in as_completed(futures):
+                    doc = future.result()
                     if doc:
                         documents.append(doc)
-                except Exception as e:
-                    logger.error(f"Error parsing {file_path}: {e}")
-                    continue
 
+        # stable order regardless of thread completion order
+        documents.sort(key=lambda d: d["filepath"])
         return documents
+
+    def _safe_parse_file(
+        self, file_path: Path, base_path: Path
+    ) -> Optional[Dict[str, Any]]:
+        """parse_file wrapper that logs and swallows per-file errors."""
+        try:
+            return self.parse_file(file_path, base_path=base_path)
+        except Exception as e:
+            logger.error(f"Error parsing {file_path}: {e}")
+            return None
+
+    @staticmethod
+    def _resolve_workers(max_workers: Optional[int], num_files: int) -> int:
+        """Resolve worker count (auto: ~cpu count, capped at 8 and <= file count)."""
+        if max_workers is not None:
+            return max(1, max_workers)
+        if num_files <= 1:
+            return 1
+        cpu = os.cpu_count() or 1
+        # modest default; parsing is I/O/native bound, cap to avoid oversubscription
+        return max(1, min(8, cpu, num_files))
 
     def _resolve_extension(self, file_path: Path) -> str:
         """Resolve an extension, accounting for compound tar suffixes."""
@@ -389,7 +540,13 @@ class DocumentParser:
         if extension == ".epub":
             return self._parse_epub(file_path)
         if extension in self.AUDIO_EXTENSIONS:
-            return self._parse_audio(file_path)
+            return self._transcribe_media(file_path)
+        if extension in self.VECTOR_IMAGE_EXTENSIONS:
+            return self._parse_svg(file_path)
+        if extension in self.RASTER_IMAGE_EXTENSIONS:
+            return self._parse_image(file_path)
+        if extension in self.VIDEO_EXTENSIONS:
+            return self._parse_video(file_path)
         return None
 
     def _parse_markdown(self, file_path: Path) -> str:
@@ -618,11 +775,110 @@ class DocumentParser:
             logger.error(f"Error parsing EPUB file {file_path}: {e}")
             return ""
 
-    def _parse_audio(self, file_path: Path) -> str:
-        """Transcribe an audio file to text via speech-to-text.
+    # ---- audio / video transcription (speech-to-text) ----
 
-        WAV/AIFF/FLAC are read natively; other formats (mp3, m4a, aac, ogg, ...)
-        are converted to wav first with pydub (which needs the ffmpeg binary).
+    def _resolve_audio_backend(self) -> Optional[str]:
+        """Resolve the effective transcription backend, honoring availability.
+
+        Honors the configured preference first (faster-whisper by default), then
+        falls back through the remaining backends. "auto" just takes the first
+        available in preference order.
+        """
+        available = {
+            "faster-whisper": WhisperModel is not None,
+            "openai-whisper": openai_whisper is not None,
+            "speech_recognition": sr is not None,
+        }
+        pref = (self.audio_backend or "faster-whisper").lower()
+        if pref == "auto":
+            order = list(AUDIO_BACKENDS)
+        else:
+            order = [pref] + [b for b in AUDIO_BACKENDS if b != pref]
+
+        for backend in order:
+            if available.get(backend):
+                if pref not in ("auto", backend):
+                    logger.warning(
+                        f"Audio backend '{pref}' unavailable; using '{backend}'"
+                    )
+                return backend
+
+        logger.error(
+            "No transcription backend available. Install faster-whisper, "
+            "openai-whisper, or SpeechRecognition."
+        )
+        return None
+
+    def _whisper_device_compute(self):
+        """Pick (device, compute_type) for the whisper backends."""
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return "cuda", "float16"
+        except Exception:
+            pass
+        # int8 keeps CPU transcription fast and light (matches faster-whisper docs)
+        return "cpu", "int8"
+
+    def _transcribe_media(self, file_path: Path) -> str:
+        """Transcribe speech from an audio or video file via the chosen backend."""
+        backend = self._resolve_audio_backend()
+        if backend == "faster-whisper":
+            return self._transcribe_faster_whisper(file_path)
+        if backend == "openai-whisper":
+            return self._transcribe_openai_whisper(file_path)
+        if backend == "speech_recognition":
+            return self._transcribe_speech_recognition(file_path)
+        return ""
+
+    def _transcribe_faster_whisper(self, file_path: Path) -> str:
+        """Transcribe via faster-whisper (CTranslate2); reads media containers."""
+        if WhisperModel is None:
+            return ""
+        try:
+            if self._fw_model is None:
+                # double-checked lock so the model loads once across threads
+                with self._model_lock:
+                    if self._fw_model is None:
+                        device, compute_type = self._whisper_device_compute()
+                        logger.info(
+                            f"Loading faster-whisper '{self.whisper_model_size}' "
+                            f"on {device} ({compute_type})"
+                        )
+                        self._fw_model = WhisperModel(
+                            self.whisper_model_size,
+                            device=device,
+                            compute_type=compute_type,
+                        )
+            # CTranslate2 transcription is thread-safe; no lock around inference
+            segments, _info = self._fw_model.transcribe(str(file_path))
+            return " ".join(segment.text.strip() for segment in segments).strip()
+        except Exception as e:
+            logger.error(f"faster-whisper failed on {file_path}: {e}")
+            return ""
+
+    def _transcribe_openai_whisper(self, file_path: Path) -> str:
+        """Transcribe via openai-whisper (torch); reads media containers."""
+        if openai_whisper is None:
+            return ""
+        try:
+            # torch models are not thread-safe; serialize load + inference
+            with self._model_lock:
+                if self._ow_model is None:
+                    logger.info(f"Loading openai-whisper '{self.whisper_model_size}'")
+                    self._ow_model = openai_whisper.load_model(self.whisper_model_size)
+                result = self._ow_model.transcribe(str(file_path))
+            return (result.get("text") or "").strip()
+        except Exception as e:
+            logger.error(f"openai-whisper failed on {file_path}: {e}")
+            return ""
+
+    def _transcribe_speech_recognition(self, file_path: Path) -> str:
+        """Legacy fallback: transcribe via SpeechRecognition (Google Web Speech).
+
+        WAV/AIFF/FLAC are read natively; other formats (mp3, m4a, video, ...) are
+        converted to wav first with pydub (which needs the ffmpeg binary).
         """
         if sr is None:
             logger.error(
@@ -639,7 +895,7 @@ class DocumentParser:
             else:
                 if AudioSegment is None:
                     logger.error(
-                        f"pydub (+ ffmpeg) needed to transcribe '{extension}' audio."
+                        f"pydub (+ ffmpeg) needed to transcribe '{extension}' media."
                     )
                     return ""
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
@@ -663,11 +919,110 @@ class DocumentParser:
                 return ""
 
         except Exception as e:
-            logger.error(f"Error transcribing audio {file_path}: {e}")
+            logger.error(f"Error transcribing media {file_path}: {e}")
             return ""
         finally:
             if tmp_wav is not None:
                 tmp_wav.unlink(missing_ok=True)
+
+    # ---- image text recognition (OCR) ----
+
+    def _parse_image(self, file_path: Path) -> str:
+        """Recognize text in a raster image via OCR (tesseract)."""
+        if pytesseract is None or Image is None:
+            logger.error("pytesseract+Pillow not installed. Cannot OCR images.")
+            return ""
+        try:
+            with Image.open(file_path) as img:
+                return pytesseract.image_to_string(img, lang=self.ocr_languages).strip()
+        except TesseractNotFoundError:
+            logger.error(
+                "tesseract-ocr binary not found on PATH. Install it to OCR images."
+            )
+            return ""
+        except Exception as e:
+            logger.error(f"Error running OCR on image {file_path}: {e}")
+            return ""
+
+    def _parse_svg(self, file_path: Path) -> str:
+        """Extract embedded text from an SVG (vector xml; no OCR needed)."""
+        try:
+            tree = ET.parse(file_path)
+            parts = []
+            for elem in tree.getroot().iter():
+                tag = elem.tag.rsplit("}", 1)[-1]  # strip xml namespace
+                if tag in ("text", "tspan", "title", "desc"):
+                    if elem.text and elem.text.strip():
+                        parts.append(elem.text.strip())
+            return "\n".join(parts)
+        except Exception as e:
+            logger.error(f"Error parsing SVG {file_path}: {e}")
+            return ""
+
+    # ---- video (audio transcript + per-frame OCR) ----
+
+    def _parse_video(self, file_path: Path) -> str:
+        """Parse a video: transcribe the audio track and OCR on-screen text.
+
+        The audio track is transcribed via the whisper backend (which reads the
+        video container directly); frames are sampled and OCR'd, deduped by
+        identical text so a slide shown for many frames is captured once.
+        """
+        parts = []
+
+        transcript = self._transcribe_media(file_path)
+        if transcript.strip():
+            parts.append("=== Speech transcript ===")
+            parts.append(transcript.strip())
+
+        on_screen = self._ocr_video_frames(file_path)
+        if on_screen.strip():
+            parts.append("=== On-screen text ===")
+            parts.append(on_screen.strip())
+
+        return "\n\n".join(parts)
+
+    def _ocr_video_frames(self, file_path: Path) -> str:
+        """Sample video frames and OCR them, deduping identical on-screen text."""
+        if cv2 is None or pytesseract is None:
+            logger.error("opencv-python+pytesseract needed for video frame OCR.")
+            return ""
+
+        capture = cv2.VideoCapture(str(file_path))
+        if not capture.isOpened():
+            logger.error(f"Could not open video for OCR: {file_path}")
+            return ""
+
+        try:
+            fps = capture.get(cv2.CAP_PROP_FPS) or 0.0
+            # sample once per `video_frame_interval` seconds (fallback: every frame)
+            interval = int(round(fps * self.video_frame_interval)) if fps > 0 else 1
+            interval = max(1, interval)
+
+            parts: List[str] = []
+            seen = set()  # dedupe identical on-screen text across frames
+            frame_idx = 0
+            while True:
+                ret, frame = capture.read()
+                if not ret:
+                    break
+                if frame_idx % interval == 0:
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    try:
+                        text = pytesseract.image_to_string(
+                            gray, lang=self.ocr_languages
+                        ).strip()
+                    except TesseractNotFoundError:
+                        logger.error("tesseract-ocr binary not found on PATH.")
+                        break
+                    normalized = " ".join(text.split())
+                    if normalized and normalized not in seen:
+                        seen.add(normalized)
+                        parts.append(text)
+                frame_idx += 1
+            return "\n".join(parts)
+        finally:
+            capture.release()
 
     def _parse_latex(self, file_path: Path) -> str:
         """Parse LaTeX file."""
