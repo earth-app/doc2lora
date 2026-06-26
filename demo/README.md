@@ -96,12 +96,16 @@ cd demo  # Make sure you're in the demo directory
 .\scripts\deploy_to_r2.bat   # Windows
 ```
 
-This script will:
+This script now wraps `doc2lora deploy` under the hood (which validates the adapter
+and uploads it to Cloudflare Workers AI). It will:
 
 - ✅ Verify the adapter was generated
 - ✅ Check that wrangler CLI is installed and authenticated
-- ☁️ Upload adapter to Cloudflare AI finetunes using `wrangler ai finetune create`
+- ☁️ Upload adapter to Cloudflare AI finetunes via `doc2lora deploy` (which calls
+  `wrangler ai finetune create`)
 - 🚀 Make adapter available for Workers AI inference
+
+Adapters up to rank 32 are supported by Cloudflare Workers AI.
 
 ### Step 3: Deploy the Worker
 
@@ -189,7 +193,7 @@ Modify `train_lora.sh/.bat` to adjust:
 - `--epochs`: Number of training iterations
 - `--batch-size`: Training batch size (reduce if you have memory issues)
 - `--learning-rate`: Learning rate for training
-- `--lora-r` and `--lora-alpha`: LoRA configuration parameters (r ≤ 8 for Cloudflare Workers AI)
+- `--lora-r` and `--lora-alpha`: LoRA configuration parameters (default r = 8, up to 32 supported by Cloudflare Workers AI)
 
 ## 🌐 Using Different Models
 

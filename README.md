@@ -6,36 +6,52 @@ The library allows you to pass a folder of documents (local or from R2 bucket) a
 
 It supports the following formats:
 
-- **Markdown**: `.md` files
+- **Markdown / reStructuredText**: `.md`, `.rst` files
 - **Text**: `.txt` files or blank text files
 - **PDF**: `.pdf` files
 - **HTML**: `.html` files
 - **Word Documents**: `.docx` files
+- **PowerPoint**: `.pptx` files (slide text + speaker notes)
+- **OpenDocument**: `.odt`, `.ods` files
+- **Rich Text**: `.rtf` files
+- **EPUB e-books**: `.epub` files
 - **Excel Spreadsheets**: `.xlsx` files
 - **CSV**: `.csv` files
 - **JSON**: `.json` files
+- **Jupyter notebooks**: `.ipynb` files (markdown + code cells)
 - **YAML**: `.yaml` / `.yml` files
 - **XML**: `.xml` files
 - **LaTeX**: `.tex` files
-- **Archive Formats**: `.zip`, `.tar.gz`, `tar.xz`, etc with supported documents inside
+- **Source code** (read as plaintext): `.py`, `.js`, `.ts`, `.java`, `.kt`, `.rs`, `.c`/`.cpp`, `.go`, `.rb`, `.php`, `.swift`, `.dart`, `.scala`, and more
+- **Audio** (speech-to-text): `.wav`, `.mp3`, `.m4a`, `.flac`, `.aac`, `.ogg`, and more
+- **Archive Formats**: `.zip`, `.tar.gz`, `.tar.xz`, `.7z`, single-file `.gz`/`.bz2`/`.xz`, etc with supported documents inside
+
+Run `doc2lora formats` to print the full list at any time.
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Install the package
-pip install -e .
+# Core install (training only):
+pip install doc2lora
 
-# For full functionality with ML training, install additional dependencies:
-pip install torch transformers peft datasets
+# Everything (all document formats, audio, R2, QLoRA):
+pip install "doc2lora[all]"
 
-# For additional document format support:
-pip install PyPDF2 python-docx beautifulsoup4 PyYAML openpyxl
+# Or pick what you need via extras:
+pip install "doc2lora[docs]"    # pdf, docx, pptx, odt/ods, rtf, epub, xlsx, 7z
+pip install "doc2lora[audio]"   # speech-to-text (also needs the ffmpeg binary for mp3/m4a/aac)
+pip install "doc2lora[r2]"      # Cloudflare R2 ingestion
+pip install "doc2lora[quant]"   # 4-bit QLoRA (CUDA only)
 
-# For R2 bucket support:
-pip install boto3
+# For local development (editable + dev tools):
+pip install -e ".[all,dev]"
 ```
+
+> Audio transcription uses the `SpeechRecognition` library (Google Web Speech by
+> default, which needs network access). Non-WAV formats are converted with
+> `pydub`, which requires the system `ffmpeg` binary.
 
 ### Basic Usage
 
@@ -169,7 +185,33 @@ You can also use the library from the command line. The CLI allows you to conver
 
 ```bash
 doc2lora convert path/to/documents --output path/to/output.json
+
+# scan first to preview files + a rough training-time estimate
+doc2lora scan path/to/documents --device cpu
+
+# low-memory machine: smaller batch + gradient accumulation (on by default:
+# gradient checkpointing). 4-bit QLoRA is available on CUDA via --load-in-4bit
+doc2lora convert path/to/documents \
+    --batch-size 1 --gradient-accumulation-steps 8 \
+    --output adapter.json
 ```
+
+### Deploy to Cloudflare Workers AI
+
+Once you have an adapter, upload it as a Workers AI finetune with one command:
+
+```bash
+# uses the wrangler CLI under the hood (validates the adapter first)
+doc2lora deploy adapter.json my-finetune-name \
+    --cf-model "@cf/mistralai/mistral-7b-instruct-v0.2-lora"
+
+# or upload via the REST API (no wrangler needed)
+doc2lora deploy adapter.json my-finetune-name --backend rest \
+    --account-id "$CLOUDFLARE_ACCOUNT_ID" --api-token "$CLOUDFLARE_API_TOKEN"
+```
+
+Then reference it at inference time with the `lora` parameter
+(`env.AI.run("@cf/mistralai/mistral-7b-instruct-v0.2-lora", { ..., lora: "my-finetune-name" })`).
 
 ### CLI for R2 Bucket Documents
 
@@ -267,6 +309,21 @@ The `examples/` directory contains usage examples for different models and scena
    python r2_usage.py
    ```
 
+5. **`qlora_usage.py`** - Memory-efficient 4-bit QLoRA training (CUDA) + deploy
+
+   ```bash
+   cd examples
+   python qlora_usage.py
+   ```
+
+6. **`qwq_usage.py`** - Fine-tuning the QwQ-32B reasoning model
+   (`@cf/qwen/qwq-32b`) with 4-bit QLoRA; needs a 24 GB+ NVIDIA GPU
+
+   ```bash
+   cd examples
+   python qwq_usage.py
+   ```
+
 ### Demo Application
 
 The `demo/` folder contains a complete working demonstration of a Cloudflare Worker using a custom LoRA adapter:
@@ -362,15 +419,85 @@ doc2lora convert ./docs \
     --learning-rate 2e-4 \
     --lora-r 8 \
     --lora-alpha 16 \
+    --gradient-accumulation-steps 4 \
     --device auto  # or cuda/mps/cpu
 ```
 
-**Memory Management:**
+**LoRA rank:** the default is `8` (broadest compatibility). Cloudflare Workers AI
+now accepts adapters up to **rank 32** (with a 300MB safetensors limit), so you can
+raise `--lora-r` up to 32 for more capacity; doc2lora only warns above 32.
 
-- 🚀 **GPU Training**: Automatically uses fp16 precision on CUDA GPUs to save memory
-- 🔧 **Out of Memory**: Reduce `--batch-size` if you encounter GPU memory errors
-- 💻 **CPU Fallback**: Use `--device cpu` if GPU memory is insufficient
-- ⚡ **Automatic Optimization**: The system automatically chooses optimal settings per device
+**Performance / low-resource options:**
+
+- ⚡ **Gradient checkpointing** (on by default): trades ~20% compute for a large
+  memory saving. Disable with `--no-gradient-checkpointing`.
+- 🧮 **Gradient accumulation**: `--gradient-accumulation-steps N` emulates a larger
+  effective batch (`batch_size * N`) without the memory cost - ideal on weak machines.
+- 🪶 **4-bit QLoRA**: `--load-in-4bit` (CUDA + `pip install "doc2lora[quant]"`) loads
+  the base model in 4-bit (nf4) so large models fit on small GPUs.
+- 🚀 **Precision**: bf16 on capable CUDA hardware, fp16 on other GPUs, fp32 on CPU.
+- 💻 **Out of Memory**: reduce `--batch-size`, raise `--gradient-accumulation-steps`,
+  or fall back with `--device cpu` (CUDA OOM also auto-falls back to CPU).
+
+### How long will training take?
+
+All numbers below are **order-of-magnitude estimates** and vary widely with
+sequence length, batch size, LoRA rank, and data shape. `doc2lora scan <dir>
+--device <d>` prints an estimate for your own corpus.
+
+#### Small base model (DialoGPT-small / GPT-2 class), 3 epochs
+
+| Corpus size | CPU       | Apple MPS | NVIDIA CUDA |
+| ----------- | --------- | --------- | ----------- |
+| ~1 MB       | minutes   | ~1 min    | seconds     |
+| ~10 MB      | ~1 hour   | ~10 min   | ~2 min      |
+| ~100 MB     | many hrs  | ~1-2 hrs  | ~20 min     |
+
+#### 7B-class model (Mistral / Gemma / Llama) vs hardware and VRAM
+
+Times below are for **3 epochs** at ~512-token sequences. The "approach" column
+reflects what fits in memory:
+
+- **>= 24 GB VRAM**: full fp16/bf16 LoRA fits comfortably.
+- **12 GB VRAM**: use 4-bit QLoRA (`--load-in-4bit`) to fit a 7B model.
+- **Apple Silicon**: 4-bit QLoRA is CUDA-only (bitsandbytes), so MPS runs **fp16
+  LoRA** and needs ~18 GB+ unified memory for a 7B model; 8 GB Macs cannot train
+  7B (use a smaller base model). MPS is also much slower than a discrete GPU.
+
+| Hardware   | Memory             | 7B approach              | 1 MB     | 10 MB    | 100 MB    |
+| ---------- | ------------------ | ------------------------ | -------- | -------- | --------- |
+| Apple M2   | 8-24 GB unified    | fp16 LoRA (16 GB+ for 7B)| ~1 hr    | ~11 hrs  | ~4-5 days |
+| Apple M3   | 8-128 GB unified   | fp16 LoRA                | ~40 min  | ~6 hrs   | ~2-3 days |
+| Apple M4   | 16-128 GB unified  | fp16 LoRA                | ~25 min  | ~4 hrs   | ~1.5 days |
+| RTX 4070   | 12 GB              | QLoRA (4-bit) required   | ~10 min  | ~1.5 hrs | ~17 hrs   |
+| RTX 5070   | 12 GB              | QLoRA (4-bit) required   | ~7 min   | ~1.2 hrs | ~12 hrs   |
+| RTX 3090   | 24 GB              | full fp16 LoRA           | ~7 min   | ~1 hr    | ~11 hrs   |
+| RTX 4090   | 24 GB              | full fp16 LoRA           | ~4 min   | ~35 min  | ~6 hrs    |
+| RTX 5090   | 32 GB              | full fp16 LoRA           | ~2 min   | ~20 min  | ~3-4 hrs  |
+
+> For LoRA you usually get better results from a few hundred to a few thousand
+> curated examples than from a huge corpus - data quality beats data quantity.
+> The small-model table above is ~20-40x faster if you only need a lightweight
+> adapter.
+
+#### 32B-class model (QwQ-32B) vs hardware and VRAM
+
+QwQ-32B (`@cf/qwen/qwq-32b`) also accepts BYO LoRA adapters. A 32B base is roughly
+4-5x slower than 7B and only fits with **4-bit QLoRA**, which needs ~20-24 GB of
+VRAM - so it is realistically a 24 GB+ NVIDIA job. Times are for **3 epochs** at
+~512-token sequences (see `examples/qwq_usage.py`).
+
+| Hardware        | Memory   | 32B approach             | 1 MB     | 10 MB    | 100 MB   |
+| --------------- | -------- | ------------------------ | -------- | -------- | -------- |
+| Apple M2/M3/M4  | unified  | not practical (no 4-bit) | -        | -        | -        |
+| RTX 4070 / 5070 | 12 GB    | too small for 32B        | -        | -        | -        |
+| RTX 3090        | 24 GB    | QLoRA (4-bit), tight     | ~30 min  | ~4.5 hrs | ~2 days  |
+| RTX 4090        | 24 GB    | QLoRA (4-bit)            | ~18 min  | ~2.5 hrs | ~1 day   |
+| RTX 5090        | 32 GB    | QLoRA (4-bit), roomy     | ~9 min   | ~1.5 hrs | ~15 hrs  |
+
+> A rank-8..32 adapter on a 32B model is still well under Cloudflare's 300 MB
+> safetensors limit. doc2lora tags Qwen/QwQ adapters with `model_type: qwen`
+> automatically; deploy with `--cf-model "@cf/qwen/qwq-32b"`.
 
 ## Features
 

@@ -16,22 +16,36 @@ pip install -e .
 doc2lora --help
 ```
 
-### Option 2: Direct Installation
+### Option 2: From PyPI with Extras
+
+The core install is training-only; document parsers and other features come from
+pip extras:
 
 ```bash
-# Install all dependencies
-pip install torch transformers peft datasets
-pip install PyPDF2 python-docx beautifulsoup4 PyYAML openpyxl click
+# Everything
+pip install "doc2lora[all]"
 
-# Install the package
-pip install -e .
+# Or pick what you need:
+pip install "doc2lora[docs]"   # pdf/docx/pptx/odt/ods/rtf/epub/xlsx/7z parsers
+pip install "doc2lora[audio]"  # speech-to-text (also needs the system ffmpeg binary)
+pip install "doc2lora[r2]"     # Cloudflare R2 ingestion
+pip install "doc2lora[quant]"  # 4-bit QLoRA (CUDA only)
+pip install "doc2lora[dev]"    # dev/test tooling
 ```
 
-### Option 3: Minimal Installation (for testing parsing only)
+For 4-bit QLoRA on CUDA, install the quant extra:
 
 ```bash
-pip install click PyYAML
-# Then install just the core package without ML dependencies
+pip install "doc2lora[quant]"
+```
+
+Extras can be combined, e.g. `pip install "doc2lora[docs,r2]"`.
+
+### Option 3: Minimal Installation (training only)
+
+```bash
+# Core install, no document parsers or extras
+pip install doc2lora
 ```
 
 ## Using doc2lora with Mistral Models
@@ -141,6 +155,22 @@ After training, you'll have two outputs:
 
 ### 2. Upload to Cloudflare
 
+The simplest path is `doc2lora deploy`, which validates the adapter
+(rank <= 32, < 300MB, required filenames, model_type) and uploads it to
+Cloudflare Workers AI as a finetune:
+
+```bash
+# Default backend shells out to wrangler (wrangler ai finetune create)
+doc2lora deploy mistral_adapter.json mistral-custom \
+    --cf-model "@cf/mistralai/mistral-7b-instruct-v0.2-lora"
+
+# Or use the Cloudflare REST API backend
+doc2lora deploy mistral_adapter.json mistral-custom \
+    --backend rest --account-id "..." --api-token "..."
+```
+
+You can still upload manually if you prefer:
+
 ```bash
 # Upload adapter to R2 storage
 wrangler r2 object put my-bucket/adapters/mistral-custom ./mistral_adapter_adapter/ --recursive
@@ -194,18 +224,18 @@ conservative_config = {
     "learning_rate": 1e-4,
     "batch_size": 1,
     "num_epochs": 3,
-    "lora_r": 8,  # Max 8 for Cloudflare Workers AI
+    "lora_r": 8,  # default 8, up to 32 supported by Cloudflare
     "lora_alpha": 16,
     "max_length": 512
 }
 
-# Experimental settings (for other platforms supporting higher ranks)
+# Experimental settings (for higher-rank adapters)
 experimental_config = {
     "learning_rate": 5e-5,
     "batch_size": 2,
     "num_epochs": 5,
-    "lora_r": 8,  # Still limited to 8 for compatibility
-    "lora_alpha": 16,
+    "lora_r": 16,  # default 8, up to 32 supported by Cloudflare
+    "lora_alpha": 32,
     "max_length": 1024
 }
 ```

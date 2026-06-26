@@ -19,11 +19,25 @@ pip install -e .
 
 ### For Production
 
-Install from PyPI (when published):
+Install from PyPI (when published). The core install is training-only; document
+parsers and extras are pulled in via pip extras:
 
 ```bash
+# Core (training only)
 pip install doc2lora
+
+# Everything
+pip install "doc2lora[all]"
+
+# Pick what you need:
+pip install "doc2lora[docs]"   # pdf/docx/pptx/odt/ods/rtf/epub/xlsx/7z parsers
+pip install "doc2lora[audio]"  # speech-to-text (also needs the system ffmpeg binary)
+pip install "doc2lora[r2]"     # Cloudflare R2 ingestion
+pip install "doc2lora[quant]"  # 4-bit QLoRA (CUDA only)
+pip install "doc2lora[dev]"    # dev/test tooling
 ```
+
+You can combine extras, e.g. `pip install "doc2lora[docs,r2]"`.
 
 ## Quick Start
 
@@ -113,11 +127,40 @@ doc2lora convert-r2 my-documents-bucket \
 #### Other CLI Commands
 
 ```bash
-# Scan directory for supported files
+# Scan directory for supported files (prints a rough training-time estimate)
 doc2lora scan path/to/documents
+doc2lora scan path/to/documents --device cpu   # estimate for a specific device
 
 # List supported formats
 doc2lora formats
+```
+
+#### Deploy to Cloudflare Workers AI
+
+After training, upload the adapter to Cloudflare Workers AI with `doc2lora deploy`.
+It validates the adapter first (rank <= 32, < 300MB, required filenames, model_type).
+
+```bash
+# Default: shell out to the wrangler CLI (wrangler ai finetune create)
+doc2lora deploy adapter.json my-finetune \
+    --cf-model "@cf/mistralai/mistral-7b-instruct-v0.2-lora"
+
+# Alternative: Cloudflare REST API (reads CLOUDFLARE_ACCOUNT_ID /
+# CLOUDFLARE_API_TOKEN env vars if the flags are omitted)
+doc2lora deploy adapter.json my-finetune \
+    --backend rest \
+    --account-id "your-account-id" \
+    --api-token "your-api-token" \
+    --cf-model "@cf/mistralai/mistral-7b-instruct-v0.2-lora"
+```
+
+At inference, reference the uploaded finetune via the `lora` parameter:
+
+```javascript
+const response = await env.AI.run('@cf/mistralai/mistral-7b-instruct-v0.2-lora', {
+  messages: [{ role: "user", content: "..." }],
+  lora: "my-finetune"
+});
 ```
 
 ## Configuration Options
@@ -130,10 +173,18 @@ doc2lora formats
 - `--learning-rate`: Learning rate (default: 5e-4)
 - `--max-length`: Maximum sequence length (default: 512)
 - `--device`: Device for training - `auto` (default), `cuda`, `mps`, or `cpu`
+- `--gradient-accumulation-steps`: Accumulate gradients over N steps to emulate a
+  larger batch on low-memory machines (default: 1)
+- `--gradient-checkpointing` / `--no-gradient-checkpointing`: Trade ~20% compute for
+  lower memory use (default: on)
+- `--load-in-4bit`: Use 4-bit QLoRA (CUDA + bitsandbytes only; install the `quant` extra)
+
+Precision is selected automatically: bf16 on capable CUDA GPUs, fp16 on other GPUs,
+fp32 on CPU.
 
 ### LoRA Parameters
 
-- `--lora-r`: LoRA rank parameter (default: 16)
+- `--lora-r`: LoRA rank parameter (default: 8; Cloudflare Workers AI supports up to 32)
 - `--lora-alpha`: LoRA alpha parameter (default: 32)
 - `--lora-dropout`: LoRA dropout rate (default: 0.1)
 
@@ -141,18 +192,30 @@ doc2lora formats
 
 - **Markdown** (.md): Full markdown parsing
 - **Text** (.txt): Plain text files
-- **PDF** (.pdf): Text extraction from PDF documents
+- **PDF** (.pdf): Text extraction from PDF documents (via `pypdf`, with PyPDF2 fallback)
 - **HTML** (.html): Text extraction from HTML
 - **Word** (.docx): Microsoft Word documents
+- **PowerPoint** (.pptx): Microsoft PowerPoint presentations
+- **OpenDocument** (.odt, .ods): OpenDocument text and spreadsheets
+- **Rich Text** (.rtf): Rich Text Format documents
+- **EPUB** (.epub): EPUB e-books
 - **Excel** (.xlsx): Excel spreadsheet files
 - **CSV** (.csv): Comma-separated values
 - **JSON** (.json): JSON data files
 - **YAML** (.yaml, .yml): YAML configuration files
 - **XML** (.xml): XML documents
 - **LaTeX** (.tex): LaTeX source files
+- **reStructuredText** (.rst): reStructuredText documents
+- **Jupyter notebooks** (.ipynb): Notebook cells extracted as text
+- **Source code** (.py, .js, .ts, .java, .kt, .rs, .c, .cpp, .go, .rb, .php, .swift,
+  .dart, .scala, and more): Read as plaintext
+- **Audio** (.wav, .mp3, .m4a, .flac, .aac, .ogg, and more): Transcribed via
+  speech-to-text (non-wav formats need the system ffmpeg binary)
 - **ZIP** (.zip): ZIP archives containing supported documents
 - **TAR** (.tar): TAR archives containing supported documents
 - **Compressed TAR** (.tar.gz, .tgz, .tar.bz2, .tbz2, .tar.xz, .txz): Compressed TAR archives
+- **7-Zip** (.7z): 7-Zip archives containing supported documents
+- **Single-file compressed** (.gz, .bz2, .xz): Standalone compressed documents
 
 ### Archive Support
 
@@ -190,6 +253,20 @@ doc2lora automatically detects and uses the best available device:
 2. 🍎 Apple Silicon (MPS) - Good performance on Mac M1/M2
 3. 💻 CPU - Reliable fallback, works everywhere
 
+### Training Time Estimates
+
+Approximate, for a small base model over 3 epochs (use `doc2lora scan` for a
+per-machine estimate):
+
+| Corpus size | CPU       | Apple MPS  | NVIDIA CUDA |
+| ----------- | --------- | ---------- | ----------- |
+| ~1 MB       | minutes   | ~1 min     | seconds     |
+| ~10 MB      | ~1 hour   | ~10 min    | ~2 min      |
+| ~100 MB     | many hrs  | ~1-2 hrs   | ~20 min     |
+
+7B-class models are roughly 20-40x slower than these figures; on CUDA, use
+`--load-in-4bit` (QLoRA) to fit them in memory and speed training up.
+
 ## Model Recommendations
 
 ### Small Models (Good for testing)
@@ -212,8 +289,8 @@ doc2lora automatically detects and uses the best available device:
 ### Common Issues
 
 1. **GPU out of memory**: Reduce batch size (`--batch-size 1`) or use CPU (`--device cpu`)
-2. **Missing dependencies**: Install with `pip install -e .`
-3. **PDF parsing errors**: Ensure PyPDF2 is installed
+2. **Missing dependencies**: Install the relevant extra, e.g. `pip install "doc2lora[docs]"` (or `[all]`)
+3. **PDF parsing errors**: Ensure `pypdf` is installed (part of the `docs` extra; PyPDF2 also works as a fallback)
 4. **Slow training**: GPU is automatically used when available; reduce dataset size for testing
 
 ### Performance Tips
