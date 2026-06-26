@@ -29,9 +29,9 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Create finetune and upload adapter
+REM Create finetune and upload adapter via doc2lora (validates first, then wrangler)
 echo 📤 Creating finetune and uploading adapter files...
-wrangler ai finetune create "@cf/mistralai/mistral-7b-instruct-v0.2-lora" "%ADAPTER_NAME%" "%ADAPTER_PATH%"
+doc2lora deploy "%ADAPTER_PATH%" "%ADAPTER_NAME%" --cf-model "@cf/mistralai/mistral-7b-instruct-v0.2-lora"
 
 if %errorlevel% equ 0 (
     echo.

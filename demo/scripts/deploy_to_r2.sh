@@ -61,9 +61,12 @@ if ! command -v wrangler &> /dev/null; then
     exit 1
 fi
 
-# Create finetune and upload adapter
+# Create finetune and upload adapter via doc2lora (validates the adapter first,
+# then shells out to wrangler). Equivalent to the raw command:
+#   wrangler ai finetune create "@cf/mistralai/mistral-7b-instruct-v0.2-lora" "$ADAPTER_NAME" "$ADAPTER_PATH"
 echo "📤 Creating finetune and uploading adapter files..."
-wrangler ai finetune create "@cf/mistralai/mistral-7b-instruct-v0.2-lora" "$ADAPTER_NAME" "$ADAPTER_PATH"
+doc2lora deploy "$ADAPTER_PATH" "$ADAPTER_NAME" \
+    --cf-model "@cf/mistralai/mistral-7b-instruct-v0.2-lora"
 
 if [ $? -eq 0 ]; then
     echo ""
