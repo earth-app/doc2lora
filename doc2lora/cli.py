@@ -7,6 +7,7 @@ from typing import Optional
 
 import click
 
+from . import __version__
 from .core import convert, convert_from_r2
 
 # Set up logging
@@ -16,7 +17,7 @@ logging.basicConfig(
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version=__version__)
 def cli():
     """doc2lora: Convert documents to LoRA adapters for LLM fine-tuning."""
     pass
@@ -51,10 +52,29 @@ def cli():
 )
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
 @click.option(
-    "--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)"
+    "--lora-r",
+    default=8,
+    help="LoRA rank parameter (Cloudflare Workers AI supports up to 32)",
 )
 @click.option("--lora-alpha", default=16, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
+@click.option(
+    "--gradient-accumulation-steps",
+    default=1,
+    type=int,
+    help="Accumulate grads to emulate a larger batch on low-memory machines",
+)
+@click.option(
+    "--gradient-checkpointing/--no-gradient-checkpointing",
+    default=True,
+    help="Trade compute for memory (helps on low-RAM machines)",
+)
+@click.option(
+    "--load-in-4bit",
+    is_flag=True,
+    default=False,
+    help="Use 4-bit QLoRA (requires bitsandbytes + CUDA)",
+)
 @click.option(
     "--device",
     default=None,
@@ -74,6 +94,9 @@ def convert_cmd(
     lora_r: int,
     lora_alpha: int,
     lora_dropout: float,
+    gradient_accumulation_steps: int,
+    gradient_checkpointing: bool,
+    load_in_4bit: bool,
     device: Optional[str],
     verbose: bool,
 ):
@@ -97,6 +120,9 @@ def convert_cmd(
             lora_r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            gradient_checkpointing=gradient_checkpointing,
+            load_in_4bit=load_in_4bit,
             device=None if device == "auto" else device,
         )
 
@@ -111,9 +137,16 @@ def convert_cmd(
 @click.argument(
     "documents_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
 )
-def scan(documents_path: str):
+@click.option(
+    "--device",
+    default=None,
+    type=click.Choice(["cuda", "mps", "cpu", "auto"], case_sensitive=False),
+    help="Device to assume for the training-time estimate",
+)
+def scan(documents_path: str, device: Optional[str]):
     """Scan a directory for supported document files."""
     from .parsers import DocumentParser
+    from .utils import create_training_summary
 
     parser = DocumentParser()
     documents = parser.parse_directory(documents_path)
@@ -124,6 +157,23 @@ def scan(documents_path: str):
         size_kb = doc["size"] / 1024
         click.echo(f"  📄 {doc['filename']} ({doc['extension']}, {size_kb:.1f} KB)")
 
+    if documents:
+        summary = create_training_summary(
+            documents, device=None if device == "auto" else device
+        )
+        click.echo(
+            f"\nTotal size: {summary['total_size_formatted']} "
+            f"across {len(summary['file_types'])} file type(s)"
+        )
+        click.echo(
+            f"Estimated training time (~small model): "
+            f"{summary['estimated_training_time']}"
+        )
+        click.echo(
+            "Note: rough estimate; 7B-class models are ~20-40x slower "
+            "(QLoRA on CUDA recovers much of that)."
+        )
+
 
 @cli.command()
 def formats():
@@ -133,27 +183,44 @@ def formats():
     click.echo("Supported document formats:")
 
     formats_info = [
-        (".md", "Markdown files"),
+        (".md/.rst", "Markdown / reStructuredText"),
         (".txt", "Text files"),
         (".pdf", "PDF documents"),
         (".html", "HTML files"),
         (".docx", "Word documents"),
+        (".pptx", "PowerPoint slides (text + notes)"),
+        (".odt/.ods", "OpenDocument text / spreadsheet"),
+        (".rtf", "Rich Text Format"),
+        (".epub", "EPUB e-books"),
         (".csv", "CSV files"),
         (".json", "JSON files"),
+        (".ipynb", "Jupyter notebooks (markdown + code)"),
         (".yaml/.yml", "YAML files"),
         (".xml", "XML files"),
         (".tex", "LaTeX files"),
+        (
+            "audio",
+            "Speech-to-text (.wav, .mp3, .m4a, .flac, .aac, .ogg, ...)",
+        ),
+        (
+            "source code",
+            "Read as plaintext (.py, .js, .rs, .kt, .c/.cpp, .go, .dart, ...)",
+        ),
         (".zip", "ZIP archives containing supported documents"),
         (".tar", "TAR archives containing supported documents"),
         (".tar.gz/.tgz", "Gzip-compressed TAR archives"),
         (".tar.bz2/.tbz2", "Bzip2-compressed TAR archives"),
         (".tar.xz/.txz", "XZ-compressed TAR archives"),
+        (".7z", "7-Zip archives"),
+        (".gz/.bz2/.xz", "Single-file compressed documents"),
     ]
 
     for ext, description in formats_info:
         click.echo(f"  {ext:<15} {description}")
 
-    click.echo("\nNote: Archive formats (.zip, .tar, etc.) will extract and parse")
+    code_exts = ", ".join(sorted(DocumentParser.CODE_EXTENSIONS))
+    click.echo(f"\nSource-code extensions read as plaintext: {code_exts}")
+    click.echo("\nNote: Archive formats (.zip, .tar, .7z, etc.) will extract and parse")
     click.echo("      any supported document files they contain.")
 
 
@@ -189,10 +256,29 @@ def formats():
 )
 @click.option("--learning-rate", default=5e-4, help="Learning rate for training")
 @click.option(
-    "--lora-r", default=8, help="LoRA rank parameter (max 8 for Cloudflare Workers AI)"
+    "--lora-r",
+    default=8,
+    help="LoRA rank parameter (Cloudflare Workers AI supports up to 32)",
 )
 @click.option("--lora-alpha", default=16, help="LoRA alpha parameter")
 @click.option("--lora-dropout", default=0.1, help="LoRA dropout rate")
+@click.option(
+    "--gradient-accumulation-steps",
+    default=1,
+    type=int,
+    help="Accumulate grads to emulate a larger batch on low-memory machines",
+)
+@click.option(
+    "--gradient-checkpointing/--no-gradient-checkpointing",
+    default=True,
+    help="Trade compute for memory (helps on low-RAM machines)",
+)
+@click.option(
+    "--load-in-4bit",
+    is_flag=True,
+    default=False,
+    help="Use 4-bit QLoRA (requires bitsandbytes + CUDA)",
+)
 @click.option(
     "--device",
     default=None,
@@ -237,6 +323,9 @@ def convert_r2(
     lora_r: int,
     lora_alpha: int,
     lora_dropout: float,
+    gradient_accumulation_steps: int,
+    gradient_checkpointing: bool,
+    load_in_4bit: bool,
     device: Optional[str],
     r2_access_key_id: str,
     r2_secret_access_key: str,
@@ -315,6 +404,9 @@ def convert_r2(
             lora_r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            gradient_checkpointing=gradient_checkpointing,
+            load_in_4bit=load_in_4bit,
             device=None if device == "auto" else device,
             aws_access_key_id=r2_access_key_id,
             aws_secret_access_key=r2_secret_access_key,
@@ -361,6 +453,64 @@ def convert_r2(
             )
         else:
             click.echo(f"❌ Error: {e}", err=True)
+        raise click.Abort()
+
+
+@cli.command()
+@click.argument("adapter_path", type=click.Path(exists=True))
+@click.argument("finetune_name")
+@click.option(
+    "--cf-model",
+    default=None,
+    help="Lora-capable base model endpoint (derived from model_type if omitted)",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["wrangler", "rest"], case_sensitive=False),
+    default="wrangler",
+    help="Upload via the wrangler CLI or the Cloudflare REST API",
+)
+@click.option(
+    "--account-id",
+    envvar="CLOUDFLARE_ACCOUNT_ID",
+    help="Cloudflare account id (REST backend; or CLOUDFLARE_ACCOUNT_ID)",
+)
+@click.option(
+    "--api-token",
+    envvar="CLOUDFLARE_API_TOKEN",
+    help="Cloudflare API token (REST backend; or CLOUDFLARE_API_TOKEN)",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+def deploy(
+    adapter_path: str,
+    finetune_name: str,
+    cf_model: Optional[str],
+    backend: str,
+    account_id: Optional[str],
+    api_token: Optional[str],
+    verbose: bool,
+):
+    """Upload a trained adapter to Cloudflare Workers AI."""
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    from .deploy import deploy_adapter
+
+    try:
+        result = deploy_adapter(
+            adapter_path=adapter_path,
+            finetune_name=finetune_name,
+            cf_model=cf_model,
+            backend=backend.lower(),
+            account_id=account_id,
+            api_token=api_token,
+        )
+        click.echo(f"✅ Deployed: {result}")
+        click.echo(
+            f'   Reference it at inference with the lora param: "{finetune_name}"'
+        )
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
         raise click.Abort()
 
 
