@@ -1,0 +1,91 @@
+name: Release Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      changelog:
+        type: string
+        description: 'Changelog to replace the auto-generated one'
+      suffix:
+        type: string
+        description: 'Suffix to append to the version'
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: 'pip'
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      - name: Extract version from package
+        id: version
+        run: |
+          VERSION=$(python -c "import re; print(re.search(r'__version__ = \"(.*?)\"', open('doc2lora/__init__.py').read()).group(1))")
+          echo "Extracted version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Build package
+        run: python -m build
+      - name: Check built package
+        run: python -m twine check dist/*
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing (OIDC), no PYPI_TOKEN needed
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Retrieve latest tag
+        id: latest_tag
+        run: echo "LATEST_TAG=$(git describe --tags --abbrev=0 || echo '')" >> "$GITHUB_ENV"
+      - name: Generate changelog
+        if: ${{ github.event.inputs.changelog == '' }}
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v6
+        with:
+          configuration: '.github/release.json'
+          mode: 'HYBRID'
+          fromTag: '${{ env.LATEST_TAG }}'
+          toTag: '${{ github.ref_name }}'
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.build.outputs.version }}${{ github.event.inputs.suffix }}
+          name: doc2lora v${{ needs.build.outputs.version }}${{ github.event.inputs.suffix }}
+          body: ${{ steps.changelog.outputs.changelog || github.event.inputs.changelog }}
+          draft: false
+          prerelease: ${{ github.event.inputs.suffix != '' }}

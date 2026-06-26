@@ -2,18 +2,17 @@ name: Build Project
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ master ]
   pull_request:
-    branches: [ main, master ]
-  release:
-    types: [published]
+    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v7
@@ -25,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+        pip install -e ".[all,dev]"
     - name: Lint with flake8
       run: |
         flake8 doc2lora/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -43,7 +42,6 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
 
     steps:
     - uses: actions/checkout@v7
@@ -60,8 +58,3 @@ jobs:
       run: python -m build
     - name: Check built package
       run: python -m twine check dist/*
-    - name: Publish to PyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-      run: python -m twine upload dist/*
