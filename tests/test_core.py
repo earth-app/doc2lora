@@ -6,7 +6,64 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from doc2lora.core import convert
+from doc2lora.core import _process_input_data, convert, convert_from_r2
+
+
+class TestProcessInputData(unittest.TestCase):
+    """Test cases for in-memory input handling."""
+
+    def test_single_string(self):
+        docs = _process_input_data("hello world")
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["content"], "hello world")
+        self.assertTrue(docs[0]["filepath"].startswith("memory://"))
+
+    def test_list_of_strings(self):
+        docs = _process_input_data(["a", "b", "c"])
+        self.assertEqual(len(docs), 3)
+        self.assertEqual(docs[1]["content"], "b")
+
+    def test_single_bytes(self):
+        docs = _process_input_data(b"byte content")
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["content"], "byte content")
+
+    def test_list_of_bytes(self):
+        docs = _process_input_data([b"one", b"two"])
+        self.assertEqual(len(docs), 2)
+        self.assertEqual(docs[0]["content"], "one")
+
+    def test_invalid_type(self):
+        with self.assertRaises(ValueError):
+            _process_input_data(12345)
+
+
+class TestConvertFromR2(unittest.TestCase):
+    """Test cases for the R2 conversion wrapper."""
+
+    @patch("doc2lora.core.cleanup_temp_directory")
+    @patch("doc2lora.core.convert")
+    @patch("doc2lora.core.download_from_r2_bucket")
+    def test_delegates_and_cleans_up(self, mock_download, mock_convert, mock_cleanup):
+        mock_download.return_value = "/tmp/doc2lora_r2_xyz"
+        mock_convert.return_value = "adapter.json"
+
+        result = convert_from_r2(
+            bucket_name="bkt",
+            output_path="adapter.json",
+            aws_access_key_id="k",
+            aws_secret_access_key="s",
+            endpoint_url="https://acct.r2.cloudflarestorage.com",
+        )
+
+        self.assertEqual(result, "adapter.json")
+        mock_convert.assert_called_once()
+        # delegated with the downloaded temp dir as documents_path
+        self.assertEqual(
+            mock_convert.call_args.kwargs["documents_path"], "/tmp/doc2lora_r2_xyz"
+        )
+        # temp dir cleaned up afterward
+        mock_cleanup.assert_called_once_with("/tmp/doc2lora_r2_xyz")
 
 
 class TestCore(unittest.TestCase):
