@@ -27,7 +27,9 @@ pip install "doc2lora[all]"
 
 # Or pick what you need:
 pip install "doc2lora[docs]"   # pdf/docx/pptx/odt/ods/rtf/epub/xlsx/7z parsers
-pip install "doc2lora[audio]"  # speech-to-text (also needs the system ffmpeg binary)
+pip install "doc2lora[image]"  # image OCR (needs the system tesseract-ocr binary)
+pip install "doc2lora[audio]"  # speech-to-text via Whisper (needs the ffmpeg binary)
+pip install "doc2lora[video]"  # video: per-frame OCR + audio transcript
 pip install "doc2lora[r2]"     # Cloudflare R2 ingestion
 pip install "doc2lora[quant]"  # 4-bit QLoRA (CUDA only)
 pip install "doc2lora[dev]"    # dev/test tooling
@@ -40,6 +42,21 @@ pip install "doc2lora[quant]"
 ```
 
 Extras can be combined, e.g. `pip install "doc2lora[docs,r2]"`.
+
+### System dependencies (image / audio / video)
+
+A few extras shell out to native binaries that pip cannot install. Install them with your OS package manager:
+
+| Feature | Needs | macOS (Homebrew) | Debian/Ubuntu | Fedora |
+| ------- | ----- | ---------------- | ------------- | ------ |
+| Image / video OCR (`[image]`, `[video]`) | `tesseract-ocr` | `brew install tesseract` | `sudo apt-get install tesseract-ocr` | `sudo dnf install tesseract` |
+| Audio / video transcription (`[audio]`, `[video]`) | `ffmpeg` | `brew install ffmpeg` | `sudo apt-get install ffmpeg` | `sudo dnf install ffmpeg` |
+
+Notes:
+
+- `opencv-python` (video frame decoding) bundles its own libraries in the wheel, so it needs no extra system package.
+- SVG text is read from the markup, so it needs no binary.
+- For extra OCR languages, install the matching tesseract language pack (e.g. `brew install tesseract-lang`, `sudo apt-get install tesseract-ocr-fra`) and pass `--ocr-languages eng+fra`.
 
 ### Option 3: Minimal Installation (training only)
 

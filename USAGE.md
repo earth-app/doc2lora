@@ -31,7 +31,9 @@ pip install "doc2lora[all]"
 
 # Pick what you need:
 pip install "doc2lora[docs]"   # pdf/docx/pptx/odt/ods/rtf/epub/xlsx/7z parsers
-pip install "doc2lora[audio]"  # speech-to-text (also needs the system ffmpeg binary)
+pip install "doc2lora[image]"  # image OCR (needs the system tesseract-ocr binary)
+pip install "doc2lora[audio]"  # speech-to-text via Whisper (needs the ffmpeg binary)
+pip install "doc2lora[video]"  # video: per-frame OCR + audio transcript
 pip install "doc2lora[r2]"     # Cloudflare R2 ingestion
 pip install "doc2lora[quant]"  # 4-bit QLoRA (CUDA only)
 pip install "doc2lora[dev]"    # dev/test tooling
@@ -179,8 +181,34 @@ const response = await env.AI.run('@cf/mistralai/mistral-7b-instruct-v0.2-lora',
   lower memory use (default: on)
 - `--load-in-4bit`: Use 4-bit QLoRA (CUDA + bitsandbytes only; install the `quant` extra)
 
-Precision is selected automatically: bf16 on capable CUDA GPUs, fp16 on other GPUs,
-fp32 on CPU.
+**Parsing & media:**
+
+- `--max-workers`: Thread-pool size for parsing the document folder (default: auto)
+- `--audio-backend`: Speech-to-text backend - `faster-whisper` (default),
+  `openai-whisper`, `speech_recognition`, or `auto`
+- `--whisper-model`: Whisper model size - `tiny`, `base` (default), `small`,
+  `medium`, `large-v3`, ...
+- `--ocr-languages`: Tesseract language code(s) for image/video OCR (e.g. `eng`, `eng+fra`)
+- `--video-frame-interval`: Seconds between sampled video frames for on-screen-text OCR
+- `--chunk` / `--no-chunk`: split documents longer than `--max-length` into multiple
+  training examples (default) vs truncate each file to its first window
+- `--chunk-overlap`: token overlap between consecutive chunks (default 0)
+
+**Speed (opt-in):**
+
+- `--group-by-length` / `--no-group-by-length`: length-grouped batching auto-enables at
+  batch_size >= 2 (hardware-agnostic); use these to force it on/off
+- `--torch-compile` / `--no-torch-compile`: `torch.compile` auto-enables on CUDA for
+  corpora >= ~10 MB of text; use these to force it on/off
+- `--attn-implementation`: Attention kernel - `sdpa` (auto), `flash_attention_2` (CUDA), `eager`
+- `--dataloader-num-workers`: DataLoader worker processes (keep 0 on macOS / in-memory data)
+- `--optim`: Override the optimizer (default: fused AdamW on CUDA, else `adamw_torch`)
+
+Precision is selected automatically: bf16 on bf16-capable CUDA and on Apple Silicon
+(macOS 14+), fp16 on other CUDA GPUs, fp32 on CPU and older MPS. TF32 matmul and a
+fused AdamW optimizer turn on automatically on supported CUDA hardware. See the
+README "Training speed optimizations" section for the full list of auto and opt-in
+speedups across CPU / Apple / NVIDIA.
 
 ### LoRA Parameters
 
@@ -210,7 +238,12 @@ fp32 on CPU.
 - **Source code** (.py, .js, .ts, .java, .kt, .rs, .c, .cpp, .go, .rb, .php, .swift,
   .dart, .scala, and more): Read as plaintext
 - **Audio** (.wav, .mp3, .m4a, .flac, .aac, .ogg, and more): Transcribed via
-  speech-to-text (non-wav formats need the system ffmpeg binary)
+  Whisper (`faster-whisper` by default; needs the system ffmpeg binary)
+- **Images** (.png, .jpg, .bmp, .gif, .tiff, .webp, and more): OCR text
+  recognition via tesseract (needs the system tesseract-ocr binary)
+- **SVG** (.svg): Embedded text extracted from the vector markup (no OCR)
+- **Video** (.mp4, .avi, .mov, .mkv, .webm, and more): Audio track transcribed
+  via Whisper plus on-screen-text OCR per frame (deduped by identical text)
 - **ZIP** (.zip): ZIP archives containing supported documents
 - **TAR** (.tar): TAR archives containing supported documents
 - **Compressed TAR** (.tar.gz, .tgz, .tar.bz2, .tbz2, .tar.xz, .txz): Compressed TAR archives
@@ -249,9 +282,9 @@ python -m pytest tests/
 
 **Automatic Device Detection:**
 doc2lora automatically detects and uses the best available device:
-1. 🚀 NVIDIA GPU (CUDA) - Uses fp16 precision for memory efficiency
-2. 🍎 Apple Silicon (MPS) - Good performance on Mac M1/M2
-3. 💻 CPU - Reliable fallback, works everywhere
+1. 🚀 NVIDIA GPU (CUDA) - bf16 on Ampere+ (else fp16), TF32 matmul, and fused AdamW
+2. 🍎 Apple Silicon (MPS) - bf16 on macOS 14+ (else fp32); fp16 is never auto-enabled
+3. 💻 CPU - Reliable fallback, works everywhere (fp32)
 
 ### Training Time Estimates
 

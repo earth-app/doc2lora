@@ -23,7 +23,9 @@ It supports the following formats:
 - **XML**: `.xml` files
 - **LaTeX**: `.tex` files
 - **Source code** (read as plaintext): `.py`, `.js`, `.ts`, `.java`, `.kt`, `.rs`, `.c`/`.cpp`, `.go`, `.rb`, `.php`, `.swift`, `.dart`, `.scala`, and more
-- **Audio** (speech-to-text): `.wav`, `.mp3`, `.m4a`, `.flac`, `.aac`, `.ogg`, and more
+- **Audio** (speech-to-text via Whisper): `.wav`, `.mp3`, `.m4a`, `.flac`, `.aac`, `.ogg`, and more
+- **Images** (OCR text recognition): `.png`, `.jpg`, `.bmp`, `.gif`, `.tiff`, `.webp`, and more; `.svg` text is read from the markup
+- **Video** (audio transcript + on-screen-text OCR): `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, and more
 - **Archive Formats**: `.zip`, `.tar.gz`, `.tar.xz`, `.7z`, single-file `.gz`/`.bz2`/`.xz`, etc with supported documents inside
 
 Run `doc2lora formats` to print the full list at any time.
@@ -41,7 +43,9 @@ pip install "doc2lora[all]"
 
 # Or pick what you need via extras:
 pip install "doc2lora[docs]"    # pdf, docx, pptx, odt/ods, rtf, epub, xlsx, 7z
-pip install "doc2lora[audio]"   # speech-to-text (also needs the ffmpeg binary for mp3/m4a/aac)
+pip install "doc2lora[image]"   # image OCR (needs the system tesseract-ocr binary)
+pip install "doc2lora[audio]"   # speech-to-text via Whisper (needs the ffmpeg binary)
+pip install "doc2lora[video]"   # video: per-frame OCR + audio transcript
 pip install "doc2lora[r2]"      # Cloudflare R2 ingestion
 pip install "doc2lora[quant]"   # 4-bit QLoRA (CUDA only)
 
@@ -49,9 +53,20 @@ pip install "doc2lora[quant]"   # 4-bit QLoRA (CUDA only)
 pip install -e ".[all,dev]"
 ```
 
-> Audio transcription uses the `SpeechRecognition` library (Google Web Speech by
-> default, which needs network access). Non-WAV formats are converted with
-> `pydub`, which requires the system `ffmpeg` binary.
+**System dependencies** - the image/audio/video extras shell out to native binaries
+that pip can't install:
+
+| Feature | Needs | macOS (Homebrew) | Debian/Ubuntu | Fedora |
+| ------- | ----- | ---------------- | ------------- | ------ |
+| Image / video OCR (`[image]`, `[video]`) | `tesseract-ocr` | `brew install tesseract` | `sudo apt-get install tesseract-ocr` | `sudo dnf install tesseract` |
+| Audio / video transcription (`[audio]`, `[video]`) | `ffmpeg` | `brew install ffmpeg` | `sudo apt-get install ffmpeg` | `sudo dnf install ffmpeg` |
+
+`opencv-python` bundles its own libraries in the wheel (no system package), and SVG
+text is parsed from markup (no binary). Audio/video transcription defaults to
+`faster-whisper` (falls back to `openai-whisper`, then `SpeechRecognition`); choose a
+backend with `--audio-backend` and a model size with `--whisper-model`. For more OCR
+languages, install the tesseract language pack (e.g. `brew install tesseract-lang`,
+`sudo apt-get install tesseract-ocr-fra`) and pass `--ocr-languages eng+fra`.
 
 ### Basic Usage
 
@@ -242,36 +257,40 @@ doc2lora convert-r2 my-documents-bucket \
 
 ```text
 doc2lora/
-├── doc2lora/           # Main package
-│   ├── __init__.py     # Package initialization
-│   ├── core.py         # Main convert function
-│   ├── parsers.py      # Document parsing logic
-│   ├── lora_trainer.py # LoRA training implementation
-│   ├── cli.py          # Command-line interface
-│   └── utils.py        # Utility functions
-├── examples/           # Example usage
-│   ├── basic_usage.py  # Working example script
-│   ├── subdirectory_labeling_demo.py # Subdirectory labeling demonstration
-│   ├── mistral_usage.py # Mistral model example with HF API key
-│   ├── gemma_usage.py  # Gemma model example for Cloudflare AI
-│   ├── llama_usage.py  # Llama model example for Cloudflare AI
-│   ├── r2_usage.py     # R2 bucket integration example
-│   └── example_documents/  # Sample documents
-│       ├── sample.md
-│       ├── sample.txt
-│       ├── sample.json
-│       └── sample.csv
-├── demo/              # Complete working demonstration
-│   ├── data/          # Sample training documents about software development
-│   ├── scripts/       # Automation scripts (train_lora.sh/.bat, deploy_to_r2.sh/.bat)
-│   ├── worker.js      # Cloudflare Worker implementation
-│   ├── wrangler.toml  # Cloudflare Worker configuration
-│   ├── index.html     # Web interface for testing
-│   └── README.md      # Demo documentation
-├── tests/             # Test suite
-├── requirements.txt   # Dependencies
-├── setup.py          # Package setup
-└── README.md         # This file
+├── doc2lora/             # Main package
+│   ├── __init__.py       # Package init + single-source __version__
+│   ├── core.py           # convert() / convert_from_r2() entry points
+│   ├── parsers.py        # Document / image / audio / video parsing
+│   ├── lora_trainer.py   # LoRA training, device/precision, speedups
+│   ├── deploy.py         # Upload adapters to Cloudflare Workers AI
+│   ├── cli.py            # Command-line interface
+│   └── utils.py          # R2 download + helpers
+├── examples/             # Example usage scripts
+│   ├── basic_usage.py
+│   ├── media_and_optimization.py   # images/audio/video + speed knobs
+│   ├── mistral_usage.py            # Mistral (needs HF_API_KEY)
+│   ├── gemma_usage.py              # Gemma
+│   ├── llama_usage.py              # Llama 2
+│   ├── qwq_usage.py                # QwQ-32B (4-bit QLoRA)
+│   ├── qlora_usage.py              # 4-bit QLoRA + deploy
+│   ├── r2_usage.py                 # R2 bucket integration
+│   ├── subdirectory_labeling_demo.py
+│   └── example_documents/          # Sample documents
+├── demo/                 # Complete Cloudflare Workers AI demo
+│   ├── data/             # Sample training corpus
+│   ├── scripts/          # train_lora.sh/.bat, deploy_to_r2.sh/.bat
+│   ├── worker.js         # Worker (loads adapter, /chat endpoints)
+│   ├── wrangler.toml     # Worker configuration
+│   ├── index.html        # Browser UI
+│   └── README.md         # Demo documentation
+├── tests/                # Test suite (pytest)
+├── pyproject.toml        # Packaging, dependencies/extras, tool config
+├── requirements.txt      # Full install (equivalent to the [all] extra)
+├── setup.py              # Thin shim (metadata lives in pyproject.toml)
+├── README.md             # This file
+├── USAGE.md              # Usage guide
+├── INSTALL_GUIDE.md      # Install + Mistral guide
+└── CLAUDE.md             # Repo guide for Claude Code
 ```
 
 ## Examples
@@ -324,6 +343,14 @@ The `examples/` directory contains usage examples for different models and scena
    python qwq_usage.py
    ```
 
+7. **`media_and_optimization.py`** - Ingest images / audio / video and tune the
+   training-speed knobs (the auto defaults plus the opt-in flags)
+
+   ```bash
+   cd examples
+   python media_and_optimization.py
+   ```
+
 ### Demo Application
 
 The `demo/` folder contains a complete working demonstration of a Cloudflare Worker using a custom LoRA adapter:
@@ -363,9 +390,9 @@ The demo creates a **Software Developer Assistant** AI that provides guidance on
 
 **Device Priority (Automatic):**
 
-1. 🚀 **NVIDIA GPU (CUDA)** - Fastest training with fp16 precision and optimal memory usage
-2. 🍎 **Apple Silicon (MPS)** - Good performance on Mac M1/M2/M3
-3. 💻 **CPU** - Reliable fallback, works everywhere
+1. 🚀 **NVIDIA GPU (CUDA)** - Fastest; bf16 on Ampere+ (else fp16), TF32 matmul, and fused AdamW
+2. 🍎 **Apple Silicon (MPS)** - Good performance on Mac M1/M2/M3 (bf16 on macOS 14+, else fp32; fp16 autocast on MPS is NaN-prone and is never auto-enabled)
+3. 💻 **CPU** - Reliable fallback, works everywhere (fp32)
 
 **Automatic Detection (Recommended):**
 
@@ -435,9 +462,53 @@ raise `--lora-r` up to 32 for more capacity; doc2lora only warns above 32.
   effective batch (`batch_size * N`) without the memory cost - ideal on weak machines.
 - 🪶 **4-bit QLoRA**: `--load-in-4bit` (CUDA + `pip install "doc2lora[quant]"`) loads
   the base model in 4-bit (nf4) so large models fit on small GPUs.
-- 🚀 **Precision**: bf16 on capable CUDA hardware, fp16 on other GPUs, fp32 on CPU.
+- 🚀 **Precision**: bf16 on bf16-capable CUDA and Apple MPS (macOS 14+), fp16 on other
+  CUDA GPUs, fp32 on CPU and older MPS (fp16 autocast on MPS is NaN-prone).
 - 💻 **Out of Memory**: reduce `--batch-size`, raise `--gradient-accumulation-steps`,
   or fall back with `--device cpu` (CUDA OOM also auto-falls back to CPU).
+
+### Training speed optimizations
+
+doc2lora applies a set of **hardware-aware speedups automatically** - most are
+no-ops where they don't apply - and exposes a few **opt-in** ones for power users.
+
+**Applied automatically:**
+
+| Optimization | What it does | Where it helps |
+| ------------ | ------------ | -------------- |
+| **TF32 matmul** (`set_float32_matmul_precision("high")`) | runs fp32 matmuls on Tensor Cores | NVIDIA **Ampere+** (no-op on older CUDA / MPS / CPU) |
+| **bf16 / fp16 precision** | bf16 on bf16-capable CUDA & MPS (macOS 14+), fp16 on other CUDA, fp32 elsewhere | CUDA, Apple Silicon |
+| **Fused AdamW** (`optim="adamw_torch_fused"`) | single fused optimizer kernel | CUDA with PyTorch >= 2.8 (else plain AdamW) |
+| **SDPA attention** | PyTorch scaled-dot-product attention auto-selects the fastest kernel | all (CUDA fused kernels; math fallback on CPU/MPS) |
+| **`pad_to_multiple_of=8`** | aligns padded batches to Tensor-Core tiles | CUDA (harmless elsewhere) |
+| **CUDA-gated pinned memory** | `dataloader_pin_memory` only on CUDA | avoids wasted host RAM on CPU/MPS |
+| **Gradient checkpointing** (`use_reentrant=False`) | recompute activations to save memory | low-RAM machines (on by default; ~20% slower - disable with `--no-gradient-checkpointing` if you have memory headroom) |
+| **`torch.compile`** | fuses the model graph (~20-50% faster steps) | **auto on CUDA when the corpus is >= ~10 MB of text** (compile cost amortizes on long runs only; CUDA-only). Force with `--torch-compile` / `--no-torch-compile` |
+| **Length-grouped batching** | groups similar-length samples to cut padding | **auto when batch_size >= 2** (hardware-agnostic; nothing to cut at batch 1). Force with `--group-by-length` / `--no-group-by-length` |
+| **Parallel parsing** | thread pool over the document folder (PDF / OCR / transcription) | auto: ~`min(8, CPU count)` threads; tune with `--max-workers N` |
+
+**Opt-in (you choose when it's worth it):**
+
+| Flag | What it does | When to use |
+| ---- | ------------ | ----------- |
+| `--no-torch-compile` | force `torch.compile` off (it auto-enables on CUDA for large corpora) | short runs, debugging, or if compile graph-breaks |
+| `--no-group-by-length` | force length-grouped batching off (it auto-enables at batch >= 2) | if you need strict shuffle order or hit a convergence quirk |
+| `--attn-implementation flash_attention_2` | FlashAttention-2 kernel | Ampere+ CUDA with `flash-attn` + bf16/fp16 (falls back to eager; SDPA already uses flash kernels by default) |
+| `--optim adamw_bnb_8bit` | 8-bit Adam (~75% less optimizer memory) | full fine-tuning on CUDA; **little benefit for LoRA** (optimizer state is just the tiny adapter) - needs `[quant]`/bitsandbytes |
+| `--dataloader-num-workers N` | extra DataLoader worker processes | large corpora on Linux/CUDA only (default 0; keep 0 on macOS / in-memory data) |
+
+**Per-platform notes:**
+
+- **NVIDIA CUDA**: prefer **bf16 on Ampere+** (no loss scaling, no NaNs); TF32, the
+  fused optimizer, and (for corpora >= ~10 MB of text) `torch.compile` are on
+  automatically. For very long sequences, `--attn-implementation flash_attention_2`
+  (with `pip install flash-attn`) is the biggest single win.
+- **Apple Silicon (MPS)**: bf16 is used on **macOS 14+** (same memory as fp16, but
+  stable), else fp32. `torch.compile`, FlashAttention, and 4-bit QLoRA do **not** help
+  on MPS; length-grouped batching (auto at batch_size >= 2) is the main extra lever that
+  does. Keep the whole model in unified memory (no CPU offload exists on MPS).
+- **CPU**: training is a slow fallback. PyTorch already defaults to your physical-core
+  count; you can pin it with `OMP_NUM_THREADS`. Use a small base model.
 
 ### How long will training take?
 
@@ -460,25 +531,49 @@ reflects what fits in memory:
 
 - **>= 24 GB VRAM**: full fp16/bf16 LoRA fits comfortably.
 - **12 GB VRAM**: use 4-bit QLoRA (`--load-in-4bit`) to fit a 7B model.
-- **Apple Silicon**: 4-bit QLoRA is CUDA-only (bitsandbytes), so MPS runs **fp16
-  LoRA** and needs ~18 GB+ unified memory for a 7B model; 8 GB Macs cannot train
-  7B (use a smaller base model). MPS is also much slower than a discrete GPU.
+- **Apple Silicon**: 4-bit QLoRA is CUDA-only (bitsandbytes), so MPS runs **bf16
+  LoRA** (macOS 14+, else fp32) and needs ~18 GB+ unified memory for a 7B model;
+  8 GB Macs cannot train 7B (use a smaller base model). MPS is also much slower
+  than a discrete GPU.
 
-| Hardware   | Memory             | 7B approach              | 1 MB     | 10 MB    | 100 MB    |
-| ---------- | ------------------ | ------------------------ | -------- | -------- | --------- |
-| Apple M2   | 8-24 GB unified    | fp16 LoRA (16 GB+ for 7B)| ~1 hr    | ~11 hrs  | ~4-5 days |
-| Apple M3   | 8-128 GB unified   | fp16 LoRA                | ~40 min  | ~6 hrs   | ~2-3 days |
-| Apple M4   | 16-128 GB unified  | fp16 LoRA                | ~25 min  | ~4 hrs   | ~1.5 days |
-| RTX 4070   | 12 GB              | QLoRA (4-bit) required   | ~10 min  | ~1.5 hrs | ~17 hrs   |
-| RTX 5070   | 12 GB              | QLoRA (4-bit) required   | ~7 min   | ~1.2 hrs | ~12 hrs   |
-| RTX 3090   | 24 GB              | full fp16 LoRA           | ~7 min   | ~1 hr    | ~11 hrs   |
-| RTX 4090   | 24 GB              | full fp16 LoRA           | ~4 min   | ~35 min  | ~6 hrs    |
-| RTX 5090   | 32 GB              | full fp16 LoRA           | ~2 min   | ~20 min  | ~3-4 hrs  |
+| Hardware | Memory            | 7B approach               | 1 MB    | 10 MB    | 10 MB +optimizations&dagger; | 100 MB    | 100 MB +optimizations&dagger; |
+| -------- | ----------------- | ------------------------- | ------- | -------- | ---------------------------- | --------- | ----------------------------- |
+| Apple M2 | 8-24 GB unified   | bf16 LoRA (16 GB+ for 7B) | ~1 hr   | ~11 hrs  | n/a (CUDA only)              | ~4-5 days | n/a (CUDA only)               |
+| Apple M3 | 8-128 GB unified  | bf16 LoRA                 | ~40 min | ~6 hrs   | n/a                          | ~2-3 days | n/a                           |
+| Apple M4 | 16-128 GB unified | bf16 LoRA                 | ~25 min | ~4 hrs   | n/a                          | ~1.5 days | n/a                           |
+| RTX 4070 | 12 GB             | QLoRA (4-bit) required    | ~10 min | ~1.5 hrs | ~1 hr                        | ~17 hrs   | ~12 hrs                       |
+| RTX 5070 | 12 GB             | QLoRA (4-bit) required    | ~7 min  | ~1.2 hrs | ~50 min                      | ~12 hrs   | ~8-9 hrs                      |
+| RTX 3090 | 24 GB             | full bf16 LoRA            | ~7 min  | ~1 hr    | ~40 min                      | ~11 hrs   | ~7-8 hrs                      |
+| RTX 4090 | 24 GB             | full bf16 LoRA            | ~4 min  | ~35 min  | ~25 min                      | ~6 hrs    | ~4 hrs                        |
+| RTX 5090 | 32 GB             | full bf16 LoRA            | ~2 min  | ~20 min  | ~15 min                      | ~3-4 hrs  | ~2-3 hrs                      |
 
-> For LoRA you usually get better results from a few hundred to a few thousand
-> curated examples than from a huge corpus - data quality beats data quantity.
-> The small-model table above is ~20-40x faster if you only need a lightweight
-> adapter.
+&dagger; **+optimizations** = the dynamic speedups doc2lora turns on for you, on top of the
+always-on defaults (TF32, fused AdamW, bf16, SDPA, `pad_to_multiple_of=8` - already in the
+base columns). For these CUDA rows it is dominated by **`torch.compile`** (auto on CUDA once
+the corpus is >= ~10 MB of text; ~20-40% faster steps per HuggingFace, the column applies
+~30%) plus **length-grouped batching** (auto at batch_size >= 2). The compile cost (seconds
+to minutes) only amortizes on long runs, so the 10 MB and 100 MB columns reflect it while the
+~1 MB / minutes-scale column does not. Override with `--torch-compile` / `--no-torch-compile`
+(and `--group-by-length`). It does **not** help on **Apple MPS** - compile and FlashAttention
+are CUDA-only, and 7B on Apple runs at batch_size 1 (no length-grouping win), so Apple's gains
+are the bf16/etc. already in the base columns. For long sequences on Ampere+ GPUs, stack
+`--attn-implementation flash_attention_2` (needs `pip install flash-attn`).
+
+> **What counts as an "example"?** Each document becomes **one or more** training
+> examples: a file <= `--max-length` tokens (default 512, ~2 KB of text) is one example,
+> and a longer file is **auto-chunked** into consecutive `--max-length`-token windows -
+> one example each - so **all of its content is trained on** (use `--chunk-overlap N` to
+> overlap windows, or `--no-chunk` to revert to truncating each file to its first window).
+> So "a few hundred to a few thousand examples" is really *total tokens / max_length*.
+>
+> **How this impacts performance:** training time scales with **total tokens**, so
+> chunking a few huge files can balloon the run - a dozen 1 MB files is ~6,000 chunks
+> (~500x more steps than the old truncate-to-12-examples behavior). Bound it with
+> `--max-steps`, fewer `--epochs`, a smaller/curated corpus, or `--no-chunk`. Curated
+> quality still beats raw quantity. `doc2lora scan` estimates time from total bytes - a
+> rough figure, but its all-content basis now matches what's actually trained (chunking
+> on); under the old truncation default it over-counted for big files. The small-model
+> table above is ~20-40x faster if you only need a lightweight adapter.
 
 #### 32B-class model (QwQ-32B) vs hardware and VRAM
 
@@ -503,10 +598,14 @@ VRAM - so it is realistically a 24 GB+ NVIDIA job. Times are for **3 epochs** at
 
 - ✅ **Document Parsing**: Recursively scan directories for supported document types
 - ✅ **Subdirectory Labeling**: Automatically label documents based on directory structure and filename
-- ✅ **Multiple Formats**: Support for 16+ document formats including archives
+- ✅ **Multiple Formats**: Support for 20+ document, image, audio, and video formats including archives
 - ✅ **Archive Support**: Extract and parse documents from ZIP and TAR archives
 - ✅ **R2 Bucket Support**: Direct integration with Cloudflare R2 storage buckets
 - ✅ **CLI Interface**: Easy-to-use command-line interface
+- ✅ **Image / Audio / Video**: OCR images (tesseract), transcribe audio & video with Whisper, and OCR on-screen text from frames
+- ✅ **Parallel Parsing**: multithreaded parsing of the document folder
+- ✅ **Hardware-aware Speedups**: TF32, bf16, fused AdamW, SDPA, and auto `torch.compile` / length-grouped batching selected by device + corpus size
+- ✅ **One-command Deploy**: `doc2lora deploy` uploads adapters to Cloudflare Workers AI (wrangler or REST)
 - ✅ **Flexible Configuration**: Customizable LoRA parameters
 - 🔄 **LoRA Training**: Fine-tune models using LoRA adaptation (requires ML dependencies)
 - 🔄 **Export Options**: JSON format compatible with various platforms
