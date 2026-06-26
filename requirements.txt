@@ -20,9 +20,18 @@ odfpy>=1.4.1
 striprtf>=0.0.26
 EbookLib>=0.18
 py7zr>=0.20.0
-# audio transcription ([audio]); pydub needs the ffmpeg binary for non-wav
+# image text recognition / OCR ([image]); needs the system tesseract-ocr binary
+pytesseract>=0.3.10
+Pillow>=9.0.0
+# audio transcription ([audio]); faster-whisper is the default backend.
+# faster-whisper/openai-whisper need the ffmpeg binary; the SpeechRecognition
+# fallback needs ffmpeg only for non-wav (via pydub)
+faster-whisper>=1.0.0
+openai-whisper>=20231117
 SpeechRecognition>=3.10.0
 pydub>=0.25.1
+# video ingestion ([video]): per-frame OCR (opencv) + audio transcript (whisper)
+opencv-python>=4.7.0
 # cloudflare r2 ingestion ([r2])
 boto3>=1.26.0
 python-dotenv>=1.0.0

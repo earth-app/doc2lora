@@ -15,14 +15,13 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 # core runtime only; format/integration parsers live in optional extras (see below)
 dependencies = [
     "torch>=1.13.0",
@@ -50,10 +49,26 @@ docs = [
     "EbookLib>=0.18",
     "py7zr>=0.20.0",
 ]
-# audio transcription (speech-to-text); pydub needs the ffmpeg binary for non-wav
+# image text recognition (OCR); needs the system tesseract-ocr binary
+image = [
+    "pytesseract>=0.3.10",
+    "Pillow>=9.0.0",
+]
+# audio transcription (speech-to-text); faster-whisper is the default backend.
+# faster-whisper/openai-whisper need the ffmpeg binary; the SpeechRecognition
+# fallback needs ffmpeg only for non-wav formats (via pydub)
 audio = [
+    "faster-whisper>=1.0.0",
+    "openai-whisper>=20231117",
     "SpeechRecognition>=3.10.0",
     "pydub>=0.25.1",
+]
+# video ingestion: per-frame OCR (opencv + tesseract) + audio transcript (whisper)
+video = [
+    "opencv-python>=4.7.0",
+    "pytesseract>=0.3.10",
+    "Pillow>=9.0.0",
+    "faster-whisper>=1.0.0",
 ]
 # cloudflare r2 ingestion
 r2 = [
@@ -77,8 +92,13 @@ all = [
     "striprtf>=0.0.26",
     "EbookLib>=0.18",
     "py7zr>=0.20.0",
+    "pytesseract>=0.3.10",
+    "Pillow>=9.0.0",
+    "faster-whisper>=1.0.0",
+    "openai-whisper>=20231117",
     "SpeechRecognition>=3.10.0",
     "pydub>=0.25.1",
+    "opencv-python>=4.7.0",
     "boto3>=1.26.0",
     "python-dotenv>=1.0.0",
     "bitsandbytes>=0.41.0",
@@ -115,14 +135,14 @@ version = {attr = "doc2lora.__version__"}
 
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py311']
 
 [tool.isort]
 profile = "black"
 line_length = 88
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
