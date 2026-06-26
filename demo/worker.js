@@ -36,10 +36,9 @@ export default {
         });
       }
 
-      // Use Cloudflare AI with our custom LoRA adapter
-      const ai = new Ai(env.AI);
-
-      const response = await ai.run('@cf/mistralai/mistral-7b-instruct-v0.2-lora', {
+      // Use Cloudflare Workers AI with our custom LoRA adapter
+      // (modern binding: env.AI.run(...), no `new Ai()` wrapper needed)
+      const response = await env.AI.run('@cf/mistralai/mistral-7b-instruct-v0.2-lora', {
         messages: [
           {
             role: "system",

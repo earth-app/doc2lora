@@ -1,6 +1,6 @@
 name = "doc2lora-demo"
 main = "worker.js"
-compatibility_date = "2025-04-28"
+compatibility_date = "2026-06-01"
 
 [ai]
 binding = "AI"
