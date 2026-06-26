@@ -30,6 +30,9 @@ def convert(
     lora_alpha: int = 16,
     lora_dropout: float = 0.1,
     device: Optional[str] = None,
+    gradient_accumulation_steps: int = 1,
+    gradient_checkpointing: bool = True,
+    load_in_4bit: bool = False,
     **kwargs,
 ) -> str:
     """
@@ -89,6 +92,8 @@ def convert(
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
         device=device,
+        gradient_checkpointing=gradient_checkpointing,
+        load_in_4bit=load_in_4bit,
     )
 
     # Train the model
@@ -98,6 +103,7 @@ def convert(
         num_epochs=num_epochs,
         max_steps=max_steps,
         learning_rate=learning_rate,
+        gradient_accumulation_steps=gradient_accumulation_steps,
     )
 
     # Save the LoRA adapter
@@ -203,6 +209,9 @@ def convert_from_r2(
     lora_alpha: int = 16,
     lora_dropout: float = 0.1,
     device: Optional[str] = None,
+    gradient_accumulation_steps: int = 1,
+    gradient_checkpointing: bool = True,
+    load_in_4bit: bool = False,
     aws_access_key_id: str = None,
     aws_secret_access_key: str = None,
     endpoint_url: str = None,
@@ -266,6 +275,9 @@ def convert_from_r2(
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             device=device,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            gradient_checkpointing=gradient_checkpointing,
+            load_in_4bit=load_in_4bit,
             **kwargs,
         )
 
