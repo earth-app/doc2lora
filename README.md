@@ -42,7 +42,7 @@ pip install doc2lora
 pip install "doc2lora[all]"
 
 # Or pick what you need via extras:
-pip install "doc2lora[docs]"    # pdf, docx, pptx, odt/ods, rtf, epub, xlsx, 7z
+pip install "doc2lora[docs]"    # pdf, docx, pptx, rtf, epub, xlsx, 7z
 pip install "doc2lora[image]"   # image OCR (needs the system tesseract-ocr binary)
 pip install "doc2lora[audio]"   # speech-to-text via Whisper (needs the ffmpeg binary)
 pip install "doc2lora[video]"   # video: per-frame OCR + audio transcript
@@ -61,8 +61,8 @@ that pip can't install:
 | Image / video OCR (`[image]`, `[video]`) | `tesseract-ocr` | `brew install tesseract` | `sudo apt-get install tesseract-ocr` | `sudo dnf install tesseract` |
 | Audio / video transcription (`[audio]`, `[video]`) | `ffmpeg` | `brew install ffmpeg` | `sudo apt-get install ffmpeg` | `sudo dnf install ffmpeg` |
 
-`opencv-python` bundles its own libraries in the wheel (no system package), and SVG
-text is parsed from markup (no binary). Audio/video transcription defaults to
+`opencv-python` bundles its own libraries in the wheel (no system package), and
+ODT/ODS and SVG are parsed with the stdlib (no extra or system binary). Audio/video transcription defaults to
 `faster-whisper` (falls back to `openai-whisper`, then `SpeechRecognition`); choose a
 backend with `--audio-backend` and a model size with `--whisper-model`. For more OCR
 languages, install the tesseract language pack (e.g. `brew install tesseract-lang`,

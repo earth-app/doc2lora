@@ -61,6 +61,8 @@ CI matrix is Python 3.11-3.14 on `actions/setup-python@v5` with pip cache; the f
 
 The package has a three-layer pipeline. Entry points `convert()` and `convert_from_r2()` in `doc2lora/core.py` orchestrate it; everything else is a layer they call into.
 
+**Lazy heavy imports (keep this):** `core.py` imports `LoRATrainer` lazily (inside `convert()`) and `utils.py` imports `boto3` lazily (inside `download_from_r2_bucket`), so `scan` / `formats` / `deploy` / `--version` and any plain `import doc2lora` never pull in torch/transformers/peft/accelerate or boto3. Do NOT re-add eager `from .lora_trainer import ...` / `import boto3` at module top - it makes parse-only commands crash in minimal/broken environments (v1.0.2 fix).
+
 1. **Ingestion** (`doc2lora/parsers.py`, `doc2lora/utils.py`)
    - `DocumentParser` walks a directory, dispatches per extension to a `_parse_<ext>` method, and returns a list of `{content, filename, filepath, extension, size, label, category_path}` dicts.
    - **Subdirectory labeling**: every document's `label` is derived from `<subdir>_<filename-stem>` (root files become `root_<stem>`). This is a contract consumed downstream; preserve it when changing parsers.
@@ -91,7 +93,7 @@ The package has a three-layer pipeline. Entry points `convert()` and `convert_fr
 
 ### Optional-dependency pattern
 
-`parsers.py` imports `pypdf`, `python-docx`, `beautifulsoup4`, `PyYAML`, `openpyxl`, `pytesseract`/`Pillow`, `opencv-python` (`cv2`), and the Whisper backends (`faster-whisper`, `openai-whisper`) inside `try/except ImportError`, then logs a one-time warning at `DocumentParser.__init__` listing what's missing. **Each format parser must guard on its dep being non-None and raise/skip gracefully if not** - importing at module top-level would break `pip install -e .` minimal installs. When adding a new optional-format parser, follow the same pattern (top-of-file `try: import X; except: X = None`, then guard inside the `_parse_<ext>` method).
+`parsers.py` imports `pypdf`, `python-docx`, `beautifulsoup4`, `PyYAML`, `openpyxl`, `pytesseract`/`Pillow`, `opencv-python` (`cv2`), and the Whisper backends (`faster-whisper`, `openai-whisper`) inside `try/except ImportError`, then logs a one-time warning at `DocumentParser.__init__` listing what's missing. (ODT/ODS and SVG need no optional dep - they're parsed with the stdlib `zipfile` + `xml.etree`; odfpy was dropped in v1.0.1 because it is sdist-only and fails to build under Debian's patched setuptools.) **Each format parser must guard on its dep being non-None and raise/skip gracefully if not** - importing at module top-level would break `pip install -e .` minimal installs. When adding a new optional-format parser, follow the same pattern (top-of-file `try: import X; except: X = None`, then guard inside the `_parse_<ext>` method).
 
 The `pyproject.toml` `dependencies` list installs every parser dep by default; the docs market boto3, PyPDF2, etc. as "optional" for users who want to skip them with `--no-deps` or a custom requirements file. Don't promote them to module-level imports.
 

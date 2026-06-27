@@ -30,7 +30,7 @@ pip install doc2lora
 pip install "doc2lora[all]"
 
 # Pick what you need:
-pip install "doc2lora[docs]"   # pdf/docx/pptx/odt/ods/rtf/epub/xlsx/7z parsers
+pip install "doc2lora[docs]"   # pdf/docx/pptx/rtf/epub/xlsx/7z parsers (ODT/ODS: no extra)
 pip install "doc2lora[image]"  # image OCR (needs the system tesseract-ocr binary)
 pip install "doc2lora[audio]"  # speech-to-text via Whisper (needs the ffmpeg binary)
 pip install "doc2lora[video]"  # video: per-frame OCR + audio transcript
