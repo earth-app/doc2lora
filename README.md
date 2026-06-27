@@ -68,6 +68,45 @@ backend with `--audio-backend` and a model size with `--whisper-model`. For more
 languages, install the tesseract language pack (e.g. `brew install tesseract-lang`,
 `sudo apt-get install tesseract-ocr-fra`) and pass `--ocr-languages eng+fra`.
 
+### Troubleshooting
+
+#### `_cffi_backend` / pyo3 panic on Linux
+
+If a command crashes with something like:
+
+```text
+ModuleNotFoundError: No module named '_cffi_backend'
+pyo3_runtime.PanicException: Python API call failed
+```
+
+your interpreter is pulling in a **broken system `cryptography` / `cffi`**. This
+typically happens when you `pip install --user` onto a Debian/Ubuntu **system**
+Python, which mixes `~/.local` packages with `/usr/lib/python3/dist-packages`: the
+training stack (via `accelerate` -> `boto3` -> `urllib3` -> `pyOpenSSL`) then imports
+the system `cryptography`, whose Rust binding can't load `_cffi_backend`.
+
+**Fix - install into a clean virtualenv** (it gets its own working `cryptography`/`cffi`,
+isolated from the system packages):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install "doc2lora[all]"
+doc2lora convert ./docs -o adapter.json
+```
+
+`pipx install "doc2lora[all]"` works too (it auto-isolates the CLI in its own venv).
+
+Notes:
+
+- As of **v1.0.2**, `doc2lora scan` / `formats` / `--version` / `deploy` no longer import
+  torch/transformers/accelerate/boto3, so they run fine even on a broken system Python.
+  Only training (`convert` / `convert-r2`) needs the full stack - that's what the venv is for.
+- If you truly must use the system Python, force-reinstall the crypto deps into your user
+  site so they shadow the broken system ones: `pip install --user --force-reinstall cffi cryptography`.
+- A clean venv also avoids the related `odfpy` build error (`AttributeError: install_layout`)
+  caused by Debian's patched system setuptools.
+
 ### Basic Usage
 
 ```bash
