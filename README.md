@@ -201,7 +201,7 @@ You can also use the library from the command line. The CLI allows you to conver
 ```bash
 doc2lora convert path/to/documents --output path/to/output.json
 
-# scan first to preview files + a rough training-time estimate
+# scan first to preview files + per-file and total training-time estimates
 doc2lora scan path/to/documents --device cpu
 
 # low-memory machine: smaller batch + gradient accumulation (on by default:

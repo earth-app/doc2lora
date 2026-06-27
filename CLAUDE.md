@@ -113,6 +113,6 @@ The Worker binds `AI` (Workers AI) and `R2_BUCKET` (`doc2lora-adapters`). If you
 
 - **Black + isort with 88-char lines**; CI enforces both with `--check`. Don't reflow imports manually - run `isort` and `black` instead.
 - **`mypy` is configured strict in `pyproject.toml`** (`disallow_untyped_defs = true`, `python_version = "3.8"`) but is not part of the CI workflow; if you turn it on locally, expect existing files to need annotations.
-- **Logging over print**: modules use `logging.getLogger(__name__)`. CLI output uses `click.echo()`. Don't mix.
+- **Logging over print**: modules use `logging.getLogger(__name__)`. CLI output uses `click.echo()`. Don't mix. **Library modules must NOT call `logging.basicConfig()`** - only `cli.py` configures root logging (a library-level `basicConfig` shadows the app's chosen format; fixed in v1.0.2). Keep internal/incidental logs at DEBUG so `scan` stays quiet.
 - **Emoji in log messages is intentional** and matches across `core.py` / `lora_trainer.py` / `utils.py` (rocket for GPU, apple for MPS, laptop for CPU, etc.). Keep the convention if you add new device or stage logs; do not add emoji to anything user-facing in code comments or new identifiers.
 - **`USAGE.md` and `README.md` overlap heavily** - when changing CLI flags or the public `convert*` signatures, update both, plus the relevant `examples/*.py` script.
