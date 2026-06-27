@@ -84,7 +84,7 @@ class TestCore(unittest.TestCase):
 
         shutil.rmtree(self.temp_dir)
 
-    @patch("doc2lora.core.LoRATrainer")
+    @patch("doc2lora.lora_trainer.LoRATrainer")
     def test_convert_basic(self, mock_trainer_class):
         """Test basic convert functionality."""
         # Mock the trainer

@@ -31,7 +31,7 @@ def test_scan_reports_estimate(tmp_path):
     assert "Estimated training time" in result.output
 
 
-@patch("doc2lora.core.LoRATrainer")
+@patch("doc2lora.lora_trainer.LoRATrainer")
 def test_convert_invokes_trainer(mock_trainer_class, tmp_path):
     mock_trainer = MagicMock()
     mock_trainer.save_adapter.return_value = str(tmp_path / "out.json")

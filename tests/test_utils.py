@@ -76,11 +76,14 @@ def test_load_env_file_missing_raises(tmp_path):
         load_env_file(str(tmp_path / "missing.env"))
 
 
-@patch("doc2lora.utils.boto3")
-def test_download_from_r2_prefers_explicit_creds(mock_boto3, tmp_path):
-    """download_from_r2_bucket should build an S3 client with given creds."""
+def test_download_from_r2_prefers_explicit_creds(tmp_path):
+    """download_from_r2_bucket builds an S3 client with given creds (boto3 lazily imported)."""
+    import sys
+
     from doc2lora.utils import download_from_r2_bucket
 
+    # boto3 is imported inside the function now, so inject a fake via sys.modules
+    mock_boto3 = MagicMock()
     mock_client = MagicMock()
     # one page, no contents -> raises "No files found" after client setup
     mock_paginator = MagicMock()
@@ -89,13 +92,14 @@ def test_download_from_r2_prefers_explicit_creds(mock_boto3, tmp_path):
     mock_boto3.client.return_value = mock_client
     mock_boto3.session.Config.return_value = MagicMock()
 
-    with pytest.raises(ValueError, match="No files found"):
-        download_from_r2_bucket(
-            bucket_name="bkt",
-            aws_access_key_id="AKID",
-            aws_secret_access_key="SECRET",
-            endpoint_url="https://acct.r2.cloudflarestorage.com",
-        )
+    with patch.dict(sys.modules, {"boto3": mock_boto3}):
+        with pytest.raises(ValueError, match="No files found"):
+            download_from_r2_bucket(
+                bucket_name="bkt",
+                aws_access_key_id="AKID",
+                aws_secret_access_key="SECRET",
+                endpoint_url="https://acct.r2.cloudflarestorage.com",
+            )
 
     # client was created with our endpoint + creds
     _, kwargs = mock_boto3.client.call_args

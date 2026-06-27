@@ -50,13 +50,8 @@ try:
 except ImportError:
     Presentation = None
 
-try:
-    from odf import table as odf_table
-    from odf import teletype as odf_teletype
-    from odf import text as odf_text
-    from odf.opendocument import load as odf_load
-except ImportError:
-    odf_load = None
+# ODT/ODS are parsed with the stdlib (zipfile + ElementTree on content.xml); no
+# odfpy dependency - it is sdist-only and breaks under Debian's patched setuptools
 
 try:
     from striprtf.striprtf import rtf_to_text
@@ -311,8 +306,6 @@ class DocumentParser:
             missing_deps.append("openpyxl (for XLSX support)")
         if Presentation is None:
             missing_deps.append("python-pptx (for PPTX support)")
-        if odf_load is None:
-            missing_deps.append("odfpy (for ODT/ODS support)")
         if rtf_to_text is None:
             missing_deps.append("striprtf (for RTF support)")
         if epub is None:
@@ -705,43 +698,56 @@ class DocumentParser:
             return ""
 
     def _parse_odt(self, file_path: Path) -> str:
-        """Parse an OpenDocument text (ODT) file."""
-        if odf_load is None:
-            logger.error("odfpy not installed. Cannot parse ODT files.")
-            return ""
-
-        try:
-            doc = odf_load(str(file_path))
-            paragraphs = doc.getElementsByType(odf_text.P)
-            return "\n".join(odf_teletype.extractText(p) for p in paragraphs)
-        except Exception as e:
-            logger.error(f"Error parsing ODT file {file_path}: {e}")
-            return ""
+        """Parse an OpenDocument text (ODT) file (stdlib; reads content.xml)."""
+        return self._parse_opendocument(file_path, spreadsheet=False)
 
     def _parse_ods(self, file_path: Path) -> str:
-        """Parse an OpenDocument spreadsheet (ODS) file."""
-        if odf_load is None:
-            logger.error("odfpy not installed. Cannot parse ODS files.")
+        """Parse an OpenDocument spreadsheet (ODS) file (stdlib; reads content.xml)."""
+        return self._parse_opendocument(file_path, spreadsheet=True)
+
+    def _parse_opendocument(self, file_path: Path, spreadsheet: bool) -> str:
+        """Extract text from an ODT/ODS by reading content.xml (no odfpy needed).
+
+        OpenDocument files are zips; content.xml holds the body. Pull text from
+        text:p / text:h elements (and table cells for spreadsheets) - enough for a
+        training corpus without the sdist-only, unmaintained odfpy dependency.
+        """
+        text_ns = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+        table_ns = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}"
+        try:
+            with zipfile.ZipFile(file_path) as zf:
+                data = zf.read("content.xml")
+            root = ET.fromstring(data)
+        except (KeyError, zipfile.BadZipFile, ET.ParseError, OSError) as e:
+            logger.error(f"Error reading OpenDocument file {file_path}: {e}")
             return ""
 
-        try:
-            doc = odf_load(str(file_path))
+        if not spreadsheet:
+            # text doc: collect paragraphs and headings in document order
             parts = []
-            for table in doc.getElementsByType(odf_table.Table):
-                parts.append(f"Sheet: {table.getAttribute('name')}")
-                for row in table.getElementsByType(odf_table.TableRow):
-                    cells = [
-                        odf_teletype.extractText(cell)
-                        for cell in row.getElementsByType(odf_table.TableCell)
-                    ]
-                    cells = [c for c in cells if c]
-                    if cells:
-                        parts.append("\t".join(cells))
-                parts.append("")
+            for elem in root.iter():
+                if elem.tag in (text_ns + "p", text_ns + "h"):
+                    text = "".join(elem.itertext())
+                    if text.strip():
+                        parts.append(text)
             return "\n".join(parts)
-        except Exception as e:
-            logger.error(f"Error parsing ODS file {file_path}: {e}")
-            return ""
+
+        # spreadsheet: walk tables -> rows -> cells
+        parts = []
+        for table in root.iter(table_ns + "table"):
+            name = table.get(table_ns + "name")
+            if name:
+                parts.append(f"Sheet: {name}")
+            for row in table.iter(table_ns + "table-row"):
+                cells = []
+                for cell in row.iter(table_ns + "table-cell"):
+                    cell_text = "".join(cell.itertext()).strip()
+                    if cell_text:
+                        cells.append(cell_text)
+                if cells:
+                    parts.append("\t".join(cells))
+            parts.append("")
+        return "\n".join(parts)
 
     def _parse_rtf(self, file_path: Path) -> str:
         """Parse a Rich Text Format (RTF) file."""

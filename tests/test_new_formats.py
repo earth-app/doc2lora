@@ -109,43 +109,63 @@ def test_parse_pptx(parser, temp_dir):
     assert "presentation body text" in result["content"]
 
 
-def test_parse_odt(parser, temp_dir):
-    pytest.importorskip("odf")
-    from odf.opendocument import OpenDocumentText
-    from odf.text import P
+def _write_odf(path, content_xml):
+    """Write a minimal OpenDocument file (a zip whose content.xml holds the body)."""
+    import zipfile
 
-    doc = OpenDocumentText()
-    doc.text.addElement(P(text="opendocument body text"))
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("content.xml", content_xml)
+
+
+def test_parse_odt(parser, temp_dir):
+    """ODT text is extracted from content.xml with the stdlib (no odfpy)."""
+    content_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<office:document-content"
+        ' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
+        ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+        "<office:body><office:text>"
+        "<text:h>Heading One</text:h>"
+        "<text:p>opendocument body text</text:p>"
+        "</office:text></office:body></office:document-content>"
+    )
     f = temp_dir / "doc.odt"
-    doc.save(str(f))
+    _write_odf(f, content_xml)
 
     result = parser.parse_file(f)
 
     assert result is not None
     assert "opendocument body text" in result["content"]
+    assert "Heading One" in result["content"]
+    assert result["extension"] == ".odt"
 
 
 def test_parse_ods(parser, temp_dir):
-    pytest.importorskip("odf")
-    from odf.opendocument import OpenDocumentSpreadsheet
-    from odf.table import Table, TableCell, TableRow
-    from odf.text import P
-
-    doc = OpenDocumentSpreadsheet()
-    table = Table(name="Sheet1")
-    row = TableRow()
-    cell = TableCell()
-    cell.addElement(P(text="cellvalue"))
-    row.addElement(cell)
-    table.addElement(row)
-    doc.spreadsheet.addElement(table)
+    """ODS cell text is extracted from content.xml with the stdlib (no odfpy)."""
+    content_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<office:document-content"
+        ' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
+        ' xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"'
+        ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+        "<office:body><office:spreadsheet>"
+        '<table:table table:name="Sheet1">'
+        "<table:table-row>"
+        "<table:table-cell><text:p>cellvalue</text:p></table:table-cell>"
+        "<table:table-cell><text:p>42</text:p></table:table-cell>"
+        "</table:table-row>"
+        "</table:table>"
+        "</office:spreadsheet></office:body></office:document-content>"
+    )
     f = temp_dir / "sheet.ods"
-    doc.save(str(f))
+    _write_odf(f, content_xml)
 
     result = parser.parse_file(f)
 
     assert result is not None
     assert "cellvalue" in result["content"]
+    assert "Sheet1" in result["content"]
+    assert result["extension"] == ".ods"
 
 
 def test_parse_rtf(parser, temp_dir):
