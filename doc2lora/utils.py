@@ -94,7 +94,7 @@ def estimate_training_time(
 
     Args:
         num_documents: Number of documents to process
-        total_size_mb: Total size of documents in MB
+        total_size_mb: Approx size of the extracted text in MB (drives the token count)
         batch_size: Training batch size
         num_epochs: Number of training epochs
         device: Target device ('cuda', 'mps', 'cpu'); defaults to conservative cpu
@@ -184,9 +184,11 @@ def create_training_summary(
         "total_size_formatted": format_file_size(total_size),
         "file_types": file_types,
         "avg_content_length": int(avg_content_length),
+        # estimate from extracted text, not disk bytes (a PDF's on-disk size is
+        # mostly binary overhead; training time scales with the text it yields)
         "estimated_training_time": estimate_training_time(
             len(documents),
-            total_size / (1024 * 1024),
+            sum(content_lengths) / (1024 * 1024),
             batch_size=batch_size,
             num_epochs=num_epochs,
             device=device,

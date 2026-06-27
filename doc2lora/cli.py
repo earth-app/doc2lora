@@ -239,8 +239,9 @@ def convert_cmd(
 def scan(documents_path: str, device: Optional[str]):
     """Scan a directory for supported document files."""
     from .parsers import DocumentParser
-    from .utils import create_training_summary
+    from .utils import create_training_summary, estimate_training_time
 
+    resolved_device = None if device == "auto" else device
     parser = DocumentParser()
     documents = parser.parse_directory(documents_path)
 
@@ -248,12 +249,16 @@ def scan(documents_path: str, device: Optional[str]):
 
     for doc in documents:
         size_kb = doc["size"] / 1024
-        click.echo(f"  📄 {doc['filename']} ({doc['extension']}, {size_kb:.1f} KB)")
+        # per-file estimate is based on the extracted text (what actually trains)
+        content_mb = len(doc.get("content", "")) / (1024 * 1024)
+        per_file = estimate_training_time(1, content_mb, device=resolved_device)
+        click.echo(
+            f"  📄 {doc['filename']} ({doc['extension']}, {size_kb:.1f} KB, "
+            f"est. ~{per_file})"
+        )
 
     if documents:
-        summary = create_training_summary(
-            documents, device=None if device == "auto" else device
-        )
+        summary = create_training_summary(documents, device=resolved_device)
         click.echo(
             f"\nTotal size: {summary['total_size_formatted']} "
             f"across {len(summary['file_types'])} file type(s)"
@@ -263,8 +268,8 @@ def scan(documents_path: str, device: Optional[str]):
             f"{summary['estimated_training_time']}"
         )
         click.echo(
-            "Note: rough estimate; 7B-class models are ~20-40x slower "
-            "(QLoRA on CUDA recovers much of that)."
+            "Note: rough estimate from extracted text; 7B-class models are ~20-40x "
+            "slower (QLoRA on CUDA recovers much of that)."
         )
 
 
