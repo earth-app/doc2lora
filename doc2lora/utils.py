@@ -6,11 +6,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-try:
-    import boto3
-    from botocore.exceptions import ClientError, NoCredentialsError
-except ImportError:
-    boto3 = None
+# boto3 is imported lazily inside download_from_r2_bucket so that importing doc2lora
+# (e.g. for scan / formats / --version) never pulls in boto3 or its TLS stack
 
 try:
     from dotenv import load_dotenv
@@ -266,9 +263,13 @@ def download_from_r2_bucket(
                 "⚠️  Endpoint URL doesn't appear to be a Cloudflare R2 endpoint"
             )
 
-    if boto3 is None:
+    try:
+        import boto3
+        from botocore.exceptions import ClientError, NoCredentialsError
+    except ImportError:
         raise ImportError(
-            "boto3 is required for R2 bucket support. Install with: pip install boto3"
+            "boto3 is required for R2 bucket support. Install with: "
+            'pip install "doc2lora[r2]"'
         )
 
     # Create S3 client for R2 with optimized configuration for minimal egress

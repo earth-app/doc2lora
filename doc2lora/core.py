@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from .lora_trainer import LoRATrainer
 from .parsers import DocumentParser
 from .utils import cleanup_temp_directory, download_from_r2_bucket
 
@@ -119,7 +118,10 @@ def convert(
 
     logger.info(f"Found {len(documents)} documents to process")
 
-    # Create LoRA trainer and train
+    # Create LoRA trainer and train. Imported lazily so that scan/formats/--version
+    # (and any non-training import of doc2lora) never pull in torch/transformers/peft.
+    from .lora_trainer import LoRATrainer
+
     trainer = LoRATrainer(
         model_name=model_name,
         max_length=max_length,
