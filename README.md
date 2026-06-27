@@ -119,6 +119,25 @@ python basic_usage.py
 
 To use the library, you can import it into your project and call the `convert` function with the path to the folder containing your documents, or use `convert_from_r2` to process documents from an R2 bucket. The library will handle the parsing and conversion of the documents into a format suitable for LoRA fine-tuning.
 
+### Supported Base Models
+
+You can train against **any** causal-LM on HuggingFace, but to deploy the adapter to
+**Cloudflare Workers AI** the base must be one of its BYO-LoRA models. Pass the
+**`--model` / `model_name=`** id when training; the **Cloudflare ID** is what you give
+`doc2lora deploy --cf-model` and the `lora` inference parameter (doc2lora derives the
+`model_type` and a default Cloudflare id for you automatically).
+
+| Base model | `--model` / `model_name=` (HuggingFace) | Cloudflare ID | Docs |
+| ---------- | --------------------------------------- | ------------------------ | ---- |
+| Mistral 7B Instruct v0.2 | `mistralai/Mistral-7B-Instruct-v0.2` | `@cf/mistralai/mistral-7b-instruct-v0.2-lora` | [Mistral 7B model page](https://developers.cloudflare.com/workers-ai/models/mistral-7b-instruct-v0.2-lora/) |
+| Llama 2 7B Chat | `meta-llama/Llama-2-7b-chat-hf` | `@cf/meta-llama/llama-2-7b-chat-hf-lora` | [Llama 2 7B model page](https://developers.cloudflare.com/workers-ai/models/llama-2-7b-chat-hf-lora/) |
+| Gemma 7B Instruct | `google/gemma-7b-it` | `@cf/google/gemma-7b-it-lora` | [Gemma 7B model page](https://developers.cloudflare.com/workers-ai/models/gemma-7b-it-lora/) |
+| QwQ-32B | `Qwen/QwQ-32B` | `@cf/qwen/qwq-32b` | [QwQ-32B model page](https://developers.cloudflare.com/workers-ai/models/qwq-32b/) |
+
+Mistral, Llama, and Gemma are **gated** - set `HF_API_KEY` (or `HUGGINGFACE_API_TOKEN`)
+before training. For the authoritative, always-current list, filter Cloudflare's catalog
+by [capabilities=LoRA](https://developers.cloudflare.com/workers-ai/models/?capabilities=LoRA).
+
 The `convert` function now supports multiple input types:
 
 - **Folder path**: Pass a path to a folder containing documents
@@ -291,6 +310,102 @@ doc2lora convert-r2 my-documents-bucket \
     --endpoint-url "https://your-account.r2.cloudflarestorage.com" \
     --output path/to/output.json
 ```
+
+### Training 7B and 32B models
+
+There is **no special command for big models** - it is the same `convert` /
+`convert-r2`, you just point `--model` (CLI) or `model_name=` (library) at a larger
+HuggingFace repo. The pipeline, chunking, and step count are identical; a 7B base
+is only ~20-40x slower *per step* than the default small model, and a 32B another
+~4-5x on top (see [How long will training take?](#how-long-will-training-take)).
+
+Gated bases (Mistral, Llama, Gemma) need a HuggingFace token - set `HF_API_KEY`
+(or `HUGGINGFACE_API_TOKEN`). On 24 GB+ VRAM a 7B fits in full bf16/fp16 LoRA; on
+12 GB add `--load-in-4bit` (QLoRA, needs `pip install "doc2lora[quant]"`). A 32B
+base only fits with `--load-in-4bit` on a 24 GB+ NVIDIA GPU.
+
+**CLI - 7B (Mistral / Llama / Gemma):**
+
+```bash
+export HF_API_KEY="hf_..."   # gated models
+
+# 24 GB+ GPU: full bf16 LoRA
+doc2lora convert ./docs \
+    --model mistralai/Mistral-7B-Instruct-v0.2 \
+    --batch-size 2 --gradient-accumulation-steps 4 \
+    --lora-r 16 --output adapter.json
+
+# 12 GB GPU: 4-bit QLoRA (swap in meta-llama/Llama-2-7b-chat-hf or google/gemma-7b-it)
+doc2lora convert ./docs \
+    --model mistralai/Mistral-7B-Instruct-v0.2 \
+    --load-in-4bit --batch-size 1 --gradient-accumulation-steps 8 \
+    --lora-r 16 --output adapter.json
+
+# from an R2 bucket instead of a local folder (same flags)
+doc2lora convert-r2 my-bucket --env-file .env \
+    --model mistralai/Mistral-7B-Instruct-v0.2 \
+    --load-in-4bit --batch-size 1 --gradient-accumulation-steps 8 \
+    --output adapter.json
+```
+
+**CLI - 32B (QwQ-32B):**
+
+```bash
+# 4-bit QLoRA is required; 24 GB+ NVIDIA only
+doc2lora convert ./docs \
+    --model Qwen/QwQ-32B \
+    --load-in-4bit --batch-size 1 --gradient-accumulation-steps 16 \
+    --lora-r 16 --output qwq_adapter.json
+
+doc2lora convert-r2 my-bucket --env-file .env \
+    --model Qwen/QwQ-32B \
+    --load-in-4bit --batch-size 1 --gradient-accumulation-steps 16 \
+    --output qwq_adapter.json
+
+# QwQ adapters are auto-tagged model_type=qwen; deploy against the Qwen endpoint
+doc2lora deploy qwq_adapter.json my-qwq-finetune --cf-model "@cf/qwen/qwq-32b"
+```
+
+**Library - 7B and 32B (`convert` / `convert_from_r2`):**
+
+```python
+from doc2lora import convert, convert_from_r2
+
+# 7B, full bf16/fp16 LoRA on a 24 GB+ GPU (HF_API_KEY set in the environment)
+convert(
+    documents_path="./docs",
+    output_path="adapter.json",
+    model_name="mistralai/Mistral-7B-Instruct-v0.2",
+    batch_size=2,
+    gradient_accumulation_steps=4,
+    lora_r=16,
+)
+
+# 7B from an R2 bucket, 4-bit QLoRA on a 12 GB GPU
+convert_from_r2(
+    bucket_name="my-bucket",
+    env_file=".env",
+    output_path="adapter.json",
+    model_name="meta-llama/Llama-2-7b-chat-hf",
+    load_in_4bit=True,
+    batch_size=1,
+    gradient_accumulation_steps=8,
+)
+
+# 32B QwQ, 4-bit QLoRA required (24 GB+ NVIDIA)
+convert(
+    documents_path="./docs",
+    output_path="qwq_adapter.json",
+    model_name="Qwen/QwQ-32B",
+    load_in_4bit=True,
+    batch_size=1,
+    gradient_accumulation_steps=16,
+    lora_r=16,
+)
+```
+
+See `examples/mistral_usage.py`, `examples/llama_usage.py`, `examples/gemma_usage.py`,
+`examples/qlora_usage.py`, and `examples/qwq_usage.py` for complete, runnable scripts.
 
 ## Project Structure
 
