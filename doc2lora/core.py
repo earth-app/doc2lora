@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional, Union
 from .parsers import DocumentParser
 from .utils import cleanup_temp_directory, download_from_r2_bucket
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# module logger; the CLI owns root logging config (a library must not call
+# logging.basicConfig - it would shadow the app's chosen format/handlers)
 logger = logging.getLogger(__name__)
 
 

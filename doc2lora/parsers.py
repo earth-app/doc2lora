@@ -366,7 +366,7 @@ class DocumentParser:
                 if doc:
                     documents.append(doc)
         else:
-            logger.info(f"Parsing {len(files)} files with {workers} worker threads")
+            logger.debug(f"Parsing {len(files)} files with {workers} worker threads")
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = [
                     executor.submit(self._safe_parse_file, fp, directory_path)

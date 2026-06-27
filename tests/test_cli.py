@@ -29,6 +29,8 @@ def test_scan_reports_estimate(tmp_path):
     assert result.exit_code == 0
     assert "Found 2 supported documents" in result.output
     assert "Estimated training time" in result.output
+    # each file line now carries its own per-file estimate
+    assert "est. ~" in result.output
 
 
 @patch("doc2lora.lora_trainer.LoRATrainer")
