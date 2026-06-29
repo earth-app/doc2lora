@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from doc2lora.utils import (
+    cleanup_temp_directory,
     create_training_summary,
     estimate_training_time,
     format_file_size,
@@ -105,3 +106,64 @@ def test_download_from_r2_prefers_explicit_creds(tmp_path):
     _, kwargs = mock_boto3.client.call_args
     assert kwargs["aws_access_key_id"] == "AKID"
     assert kwargs["endpoint_url"] == "https://acct.r2.cloudflarestorage.com"
+
+
+def test_cleanup_temp_directory_removes_dir(tmp_path):
+    d = tmp_path / "scratch"
+    d.mkdir()
+    (d / "f.txt").write_text("x")
+    cleanup_temp_directory(str(d))
+    assert not d.exists()
+
+
+def test_cleanup_temp_directory_missing_is_safe(tmp_path):
+    # rmtree on a missing path is swallowed (logged, never raised)
+    missing = tmp_path / "does_not_exist"
+    cleanup_temp_directory(str(missing))  # no exception
+    assert not missing.exists()
+
+
+def test_download_from_r2_rejects_non_https_endpoint():
+    # endpoint validation happens before boto3 is even imported
+    from doc2lora.utils import download_from_r2_bucket
+
+    with pytest.raises(ValueError, match="https"):
+        download_from_r2_bucket(
+            bucket_name="bkt",
+            aws_access_key_id="AKID",
+            aws_secret_access_key="SECRET",
+            endpoint_url="http://insecure.example.com",
+        )
+
+
+def test_download_from_r2_downloads_objects():
+    import sys
+    from pathlib import Path
+
+    from doc2lora.utils import download_from_r2_bucket
+
+    mock_boto3 = MagicMock()
+    mock_client = MagicMock()
+    mock_paginator = MagicMock()
+    # one nested file, one root file, and a directory marker that gets skipped
+    mock_paginator.paginate.return_value = [
+        {"Contents": [{"Key": "a.txt"}, {"Key": "sub/b.txt"}, {"Key": "dir/"}]}
+    ]
+    mock_client.get_paginator.return_value = mock_paginator
+    mock_boto3.client.return_value = mock_client
+    mock_boto3.session.Config.return_value = MagicMock()
+
+    with patch.dict(sys.modules, {"boto3": mock_boto3}):
+        out = download_from_r2_bucket(
+            bucket_name="bkt",
+            aws_access_key_id="AKID",
+            aws_secret_access_key="SECRET",
+            endpoint_url="https://acct.r2.cloudflarestorage.com",
+        )
+
+    try:
+        # the "dir/" marker is skipped; the two real keys are downloaded
+        assert mock_client.download_file.call_count == 2
+        assert Path(out).exists()
+    finally:
+        cleanup_temp_directory(out)

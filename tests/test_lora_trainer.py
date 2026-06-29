@@ -2,12 +2,18 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from doc2lora.lora_trainer import CLOUDFLARE_MAX_RANK, LoRATrainer, get_device
+from doc2lora.lora_trainer import (
+    CLOUDFLARE_MAX_RANK,
+    LoRATrainer,
+    apply_runtime_perf_flags,
+    get_device,
+)
 
 
 def _make_trainer(**kwargs):
@@ -200,3 +206,162 @@ def test_should_compile_auto_heuristic():
     t.device = torch.device("cuda")
     assert t._should_compile(None, big) is True
     assert t._should_compile(None, small) is False
+
+
+# --- device detection (no GPU/MPS on CI; the branches are mocked) -----------
+# GitHub-hosted runners (ubuntu and macos alike) have no CUDA and no Metal GPU,
+# so get_device() always returns cpu there. These patch torch to drive the
+# cuda/mps branches that real CI hardware can never reach.
+
+
+def test_get_device_cuda_branch():
+    with patch("doc2lora.lora_trainer.torch") as mt:
+        mt.cuda.is_available.return_value = True
+        mt.cuda.device_count.return_value = 2
+        mt.cuda.get_device_name.return_value = "Fake GPU"
+        mt.cuda.get_device_properties.return_value.total_memory = 8 * 1024**3
+        mt.device.return_value = "CUDA_SENTINEL"
+        assert get_device() == "CUDA_SENTINEL"
+        mt.device.assert_called_once_with("cuda")
+
+
+def test_get_device_mps_branch():
+    with patch("doc2lora.lora_trainer.torch") as mt:
+        mt.cuda.is_available.return_value = False
+        mt.backends.mps.is_available.return_value = True
+        mt.device.return_value = "MPS_SENTINEL"
+        assert get_device() == "MPS_SENTINEL"
+        mt.device.assert_called_once_with("mps")
+
+
+def test_get_device_cpu_branch():
+    with patch("doc2lora.lora_trainer.torch") as mt:
+        mt.cuda.is_available.return_value = False
+        mt.backends.mps.is_available.return_value = False
+        mt.device.return_value = "CPU_SENTINEL"
+        assert get_device() == "CPU_SENTINEL"
+        mt.device.assert_called_once_with("cpu")
+
+
+def test_apply_runtime_perf_flags_cuda():
+    with patch("doc2lora.lora_trainer.torch") as mt:
+        apply_runtime_perf_flags("cuda")
+        mt.set_float32_matmul_precision.assert_called_once_with("high")
+        assert mt.backends.cuda.matmul.allow_tf32 is True
+        assert mt.backends.cudnn.allow_tf32 is True
+
+
+def test_apply_runtime_perf_flags_mps_sets_fallback_env():
+    os.environ.pop("PYTORCH_ENABLE_MPS_FALLBACK", None)
+    try:
+        with patch("doc2lora.lora_trainer.torch"):
+            apply_runtime_perf_flags("mps")
+        assert os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+    finally:
+        os.environ.pop("PYTORCH_ENABLE_MPS_FALLBACK", None)
+
+
+def test_apply_runtime_perf_flags_swallows_errors():
+    # a perf flag must never break training
+    with patch("doc2lora.lora_trainer.torch") as mt:
+        mt.set_float32_matmul_precision.side_effect = RuntimeError("boom")
+        apply_runtime_perf_flags("cuda")  # no raise
+
+
+def test_mps_supports_bf16():
+    # needs torch>=2.5 and macOS 14+
+    with (
+        patch("doc2lora.lora_trainer._torch_ge", return_value=True),
+        patch(
+            "doc2lora.lora_trainer.platform.mac_ver", return_value=("14.2.1", "", "")
+        ),
+    ):
+        assert LoRATrainer._mps_supports_bf16() is True
+    with (
+        patch("doc2lora.lora_trainer._torch_ge", return_value=True),
+        patch("doc2lora.lora_trainer.platform.mac_ver", return_value=("13.6", "", "")),
+    ):
+        assert LoRATrainer._mps_supports_bf16() is False
+    with patch("doc2lora.lora_trainer._torch_ge", return_value=False):
+        assert LoRATrainer._mps_supports_bf16() is False
+
+
+def test_select_optim_cuda_fused():
+    import torch
+
+    t = _make_trainer()
+    t.device = torch.device("cuda")
+    with patch("doc2lora.lora_trainer._torch_ge", return_value=True):
+        assert t._select_optim() == "adamw_torch_fused"
+    # fused AdamW only matured in torch 2.8; older torch falls back to plain
+    with patch("doc2lora.lora_trainer._torch_ge", return_value=False):
+        assert t._select_optim() == "adamw_torch"
+
+
+def _recording_training_arguments_cls():
+    """A stand-in TrainingArguments that records kwargs without validating them.
+
+    HF TrainingArguments raises when fp16/bf16 is set on a CPU-only host, so we
+    can't instantiate the real one to inspect the cuda branch on a CI runner.
+    Mirroring the real __init__ signature keeps _build_training_arguments' own
+    'drop unknown fields' filter behaving exactly as it does in production.
+    """
+    import inspect
+
+    from transformers import TrainingArguments as RealTA
+
+    class _RecordingTA:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    _RecordingTA.__init__.__signature__ = inspect.signature(RealTA.__init__)
+    return _RecordingTA
+
+
+def _build_args_on_device(device_type, use_bf16):
+    import torch
+
+    t = _make_trainer()
+    t.device = torch.device(device_type)
+    t.use_bf16 = use_bf16
+    with patch(
+        "doc2lora.lora_trainer.TrainingArguments", _recording_training_arguments_cls()
+    ):
+        return t._build_training_arguments(
+            output_dir="./out",
+            batch_size=2,
+            num_epochs=1,
+            max_steps=None,
+            learning_rate=5e-4,
+            gradient_accumulation_steps=1,
+            warmup_steps=0,
+            optim="adamw_torch_fused",
+            group_by_length=False,
+            dataloader_num_workers=None,
+            torch_compile=False,
+        )
+
+
+def test_build_training_arguments_cuda_fp16_branch():
+    args = _build_args_on_device("cuda", use_bf16=False)
+    # cuda + not bf16 -> fp16, pinned host memory, TF32 matmul, fused AdamW
+    assert args.fp16 is True
+    assert args.bf16 is False
+    assert args.dataloader_pin_memory is True
+    assert args.tf32 is True
+    assert args.optim == "adamw_torch_fused"
+
+
+def test_build_training_arguments_cuda_bf16_branch():
+    args = _build_args_on_device("cuda", use_bf16=True)
+    # bf16-capable cuda -> bf16 on, fp16 off
+    assert args.bf16 is True
+    assert args.fp16 is False
+
+
+def test_build_training_arguments_max_steps_path():
+    # max_steps overrides epochs and sets save_steps = max(1, max_steps // 10)
+    args = _build_args(max_steps=20)
+    assert args.max_steps == 20
+    assert args.save_steps == 2
