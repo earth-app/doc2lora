@@ -59,6 +59,22 @@ jobs:
     - name: Test with pytest
       run: |
         pytest tests/ -v --cov=doc2lora --cov-report=xml
+    - name: Upload to Codecov
+      if: ${{ always() }}
+      uses: codecov/codecov-action@v7
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        slug: earth-app/doc2lora
+        fail_ci_if_error: false
+        flags: unittests
+        files: ./coverage.xml
+    - name: Archive Coverage Artifacts
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-artifacts-${{ github.run_id }}-py${{ matrix.python-version }}
+        path: ./coverage.xml
+        retention-days: 14
 
   build:
     needs: test
